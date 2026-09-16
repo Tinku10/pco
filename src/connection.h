@@ -25,6 +25,12 @@ typedef struct {
   char* path;
 } file_t;
 
+typedef struct {
+  char* path;
+  uint32_t cursor_r;
+  char* body;
+} fdiff_t;
+
 typedef struct node {
   unsigned int id;
   // other conected socket descriptors
@@ -42,6 +48,7 @@ typedef struct message {
   message_kind kind;
   char* body;
   size_t len;
+  fdiff_t* diff;
 } message_t;
 
 int server_start(node_t*, int port, char*);
