@@ -20,11 +20,29 @@ int client_connect(char *ip, int port) {
   return socket_d;
 }
 
-int client_hello(int socket_d, node_t* node) {
+int client_hello(const node_t* node) {
   message_t msg = { .kind = CLIENT_HELLO};
 
-  send_message(socket_d, &msg);
-  receive_messages(socket_d, node);
+  send_message(node->socket_d, &msg);
+
+  return 0;
+}
+
+void *await_responses(void *ts) {
+  node_t *s = (node_t *)ts;
+
+  receive_messages(s->socket_d, s);
+
+  close(s->socket_d);
+}
+
+int client_listen(int socket, node_t* node) {
+  node->socket_d = socket;
+
+  if (pthread_create(&node->cthread, NULL, await_responses, (void *)node) < 0) {
+    perror("error spinning client listen in a separate thread");
+    return -1;
+  }
 
   return 0;
 }

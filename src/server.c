@@ -72,7 +72,7 @@ int server_start(node_t *s, int port, char* file) {
     return -1;
   }
 
-  if (pthread_create(&s->thread, NULL, accept_connections, (void *)s) < 0) {
+  if (pthread_create(&s->sthread, NULL, accept_connections, (void *)s) < 0) {
     perror("error spinning server in a separate thread");
     return -1;
   }

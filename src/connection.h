@@ -59,7 +59,9 @@ typedef struct node {
   int socket_d;
   unsigned int other_cnt;
   // thread on which the server is listening on
-  pthread_t thread;
+  pthread_t sthread;
+  // thread on which the client is listening on
+  pthread_t cthread;
   // information about the file/directory
   file_t file;
 } node_t;
@@ -74,7 +76,8 @@ typedef struct message {
 
 int server_start(node_t *, int port, char *);
 int client_connect(char *ip, int port);
-int client_hello(int, node_t *);
+int client_hello(const node_t *);
+int client_listen(int socket, node_t* node);
 
 // serialization
 char *package_message(message_t *);
@@ -86,9 +89,9 @@ char *recv_message(int, int);
 
 // send/receive handler
 int send_message(int conn_d, message_t *msg);
-void receive_messages(int conn_d, node_t *);
+void receive_messages(int conn_d, const node_t *);
 
 // message receive handler
-void on_message_received(int conn_d, message_t *msg, node_t *);
+void on_message_received(int conn_d, message_t *msg, const node_t *);
 
 #endif
