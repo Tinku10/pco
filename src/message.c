@@ -294,7 +294,8 @@ int send_message(int conn_d, message_t *msg) {
 void on_message_received(int conn_d, message_t *msg, node_t *node) {
   printf("message received of type %s\n", message_kind_str(msg->kind));
   switch (msg->kind) {
-  case MSG_CONTENT: {
+  case MSG_CONTENT: 
+  case SERVER_HELLO: {
     message_t re_msg = {.kind = MSG_ACK};
     send_message(conn_d, &re_msg);
     break;
