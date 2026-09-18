@@ -11,6 +11,8 @@ const char *message_kind_str(message_kind kind) {
     return "MSG_ACK";
   case CLIENT_HELLO:
     return "CLIENT_HELLO";
+  case SERVER_HELLO:
+    return "SERVER_HELLO";
   default:
     return "UNKNOWN";
   }
@@ -23,6 +25,7 @@ const char *message_kind_str(message_kind kind) {
 // | dlen:   4 bytes |
 // | diff:
 //        | diff (1)
+//                | kind:     4 bytes |
 //                | plen:     4 bytes |
 //                | path:  plen bytes |
 //                | llen:     4 bytes |
@@ -45,7 +48,7 @@ char *package_message(message_t *msg) {
   // total bytes excluding header
   uint32_t total_bytes = 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4;
+    total_bytes += 4 + 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       total_bytes += 4 + 4 + msg->diff[i].lines[j].len;
     }
@@ -67,7 +70,10 @@ char *package_message(message_t *msg) {
   for (size_t i = 0; i < msg->dlen; i++) {
     uint32_t plen = htonl(msg->diff[i].plen);
     uint32_t llen = htonl(msg->diff[i].llen);
+    uint32_t dkind = htonl(msg->diff[i].kind);
 
+    memcpy(buf + shift, &dkind, 4);
+    shift += 4;
     memcpy(buf + shift, &plen, 4);
     shift += 4;
     memcpy(buf + shift, msg->diff[i].path, msg->diff[i].plen);
@@ -104,6 +110,7 @@ char *package_message(message_t *msg) {
 // | dlen:   4 bytes |
 // | diff:
 //        | diff (1)
+//                | kind:     4 bytes |
 //                | plen:     4 bytes |
 //                | path:  plen bytes |
 //                | llen:     4 bytes |
@@ -144,6 +151,11 @@ message_t *unpackage_message(char *buf) {
 
     uint32_t plen;
     uint32_t llen;
+    diff_kind dkind;
+
+    memcpy(&dkind, buf + shift, 4);
+    msg->diff[i].kind = ntohl(dkind);
+    shift += 4;
 
     memcpy(&plen, buf + shift, 4);
     msg->diff[i].plen = ntohl(plen);
@@ -263,7 +275,7 @@ int send_message(int conn_d, message_t *msg) {
   printf("sending message\n");
   uint32_t total_bytes =  + MSG_HEADER_BYTES + 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4;
+    total_bytes += 4 + 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       total_bytes += 4 + 4 + msg->diff[i].lines[j].len;
     }
@@ -302,7 +314,7 @@ void on_message_received(int conn_d, message_t *msg, node_t *node) {
   }
   case CLIENT_HELLO: {
     fline_t* lines = read_file(node->file.path);
-    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines };
+    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines, .kind = DIFF_ADDED };
     message_t re_msg = {
         .kind = SERVER_HELLO,
         .dlen = 1,

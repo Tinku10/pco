@@ -21,6 +21,12 @@ typedef enum {
   SERVER_HELLO,
 } message_kind;
 
+typedef enum {
+  DIFF_ADDED,
+  DIFF_MODIFIED,
+  DIFF_DELETED,
+} diff_kind;
+
 // attributes of file/directory
 typedef struct {
   char *path;
@@ -33,6 +39,7 @@ typedef struct {
 } fline_t;
 
 typedef struct {
+  diff_kind kind;
   // file path
   char *path;
   uint32_t plen;
