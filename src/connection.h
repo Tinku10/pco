@@ -18,6 +18,7 @@ typedef enum {
   MSG_ACK,
   CLIENT_DISCONNECT,
   MSG_CONTENT,
+  SERVER_HELLO,
 } message_kind;
 
 // attributes of file/directory
@@ -26,14 +27,21 @@ typedef struct {
 } file_t;
 
 typedef struct {
+  uint32_t num;
+  uint32_t len;
+  char *body;
+} fline_t;
+
+typedef struct {
   // file path
   char *path;
   uint32_t plen;
   // cursor position
   uint32_t cursor_r;
   // body
-  char *body;
-  uint32_t blen;
+  // char *body;
+  uint32_t llen;
+  fline_t* lines;
 } fdiff_t;
 
 typedef struct node {

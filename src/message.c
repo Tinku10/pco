@@ -1,4 +1,6 @@
+#include <stb_ds.h>
 #include "connection.h"
+#include "fileio.h"
 #include "string.h"
 
 const char *message_kind_str(message_kind kind) {
@@ -23,20 +25,34 @@ const char *message_kind_str(message_kind kind) {
 //        | diff (1)
 //                | plen:     4 bytes |
 //                | path:  plen bytes |
-//                | blen:     4 bytes |
-//                | body:  blen bytes |
+//                | llen:     4 bytes |
+//                | lines:
+//                        | line (0)
+//                                | num:    4 bytes |
+//                                | len:    4 bytes |
+//                                | body: len bytes |
+//                        | line (1) ...    |
+//                        ...
+//                        | line (llen) ... |
 //                | cursor_r: 4 bytes |
 //        | diff (2) ...    |
+//        ...
 //        | diff (dlen) ... |
 // a header of 4 bytes will be added to help `recv()` know how much to read
 char *package_message(message_t *msg) {
+  printf("packing message\n");
+
   // total bytes excluding header
   uint32_t total_bytes = 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4 + msg->diff[i].blen + 4;
+    total_bytes += 4 + msg->diff[i].plen + 4;
+    for (size_t j = 0; j < msg->diff[i].llen; j++) {
+      total_bytes += 4 + 4 + msg->diff[i].lines[j].len;
+    }
   }
-  char *buf = (char *)malloc(total_bytes);
+  char *buf = (char *)malloc(MSG_HEADER_BYTES + total_bytes);
 
+  // serialize message_t
   uint32_t total = htonl(total_bytes);
   uint32_t kind = htonl(msg->kind);
   uint32_t dlen = htonl(msg->dlen);
@@ -46,18 +62,31 @@ char *package_message(message_t *msg) {
   memcpy(buf + MSG_HEADER_BYTES + 4, &dlen, 4);
 
   int shift = MSG_HEADER_BYTES + 8;
+
+  // serialize fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
     uint32_t plen = htonl(msg->diff[i].plen);
-    uint32_t blen = htonl(msg->diff[i].blen);
+    uint32_t llen = htonl(msg->diff[i].llen);
 
     memcpy(buf + shift, &plen, 4);
     shift += 4;
     memcpy(buf + shift, msg->diff[i].path, msg->diff[i].plen);
     shift += msg->diff[i].plen;
-    memcpy(buf + shift, &blen, 4);
+    memcpy(buf + shift, &llen, 4);
     shift += 4;
-    memcpy(buf + shift, msg->diff[i].body, msg->diff[i].blen);
-    shift += msg->diff[i].blen;
+
+    // serialize fline_t
+    for (size_t j = 0; j < msg->diff[i].llen; j++) {
+      uint32_t num = htonl(msg->diff[i].lines[j].num);
+      uint32_t len = htonl(msg->diff[i].lines[j].len);
+
+      memcpy(buf + shift, &num, 4);
+      shift += 4;
+      memcpy(buf + shift, &len, 4);
+      shift += 4;
+      memcpy(buf + shift, msg->diff[i].lines[j].body, msg->diff[i].lines[j].len);
+      shift += msg->diff[i].lines[j].len;
+    }
   }
 
   // printf("Received message: kind=%d diff_len=%zu body=%s\n", msg->kind,
@@ -65,7 +94,7 @@ char *package_message(message_t *msg) {
   // total_bytes; i++) {
   //   printf("%02x ", (unsigned char)buf[i]);
   // }
-  // printf("\n");
+  printf("packing complete\n");
 
   return buf;
 }
@@ -77,16 +106,25 @@ char *package_message(message_t *msg) {
 //        | diff (1)
 //                | plen:     4 bytes |
 //                | path:  plen bytes |
-//                | blen:     4 bytes |
-//                | body:  blen bytes |
+//                | llen:     4 bytes |
+//                | lines:
+//                        | line (0)
+//                                | num:    4 bytes |
+//                                | len:    4 bytes |
+//                                | body: len bytes |
+//                        | line (1) ...    |
+//                        ...
+//                        | line (llen) ... |
 //                | cursor_r: 4 bytes |
 //        | diff (2) ...    |
+//        ...
 //        | diff (dlen) ... |
 message_t *unpackage_message(char *buf) {
   printf("unpacking message\n");
 
   message_t *msg = (message_t *)malloc(sizeof(message_t));
 
+  // deserialize to message_t
   uint32_t kind;
   uint32_t dlen;
 
@@ -99,9 +137,13 @@ message_t *unpackage_message(char *buf) {
   msg->diff = (fdiff_t *)malloc(msg->dlen * sizeof(fdiff_t));
 
   int shift = 8;
+
+  // deserialize to fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
+    msg->diff[i].lines = (fline_t*)malloc(msg->diff[i].llen * sizeof(fline_t));
+
     uint32_t plen;
-    uint32_t blen;
+    uint32_t llen;
 
     memcpy(&plen, buf + shift, 4);
     msg->diff[i].plen = ntohl(plen);
@@ -111,16 +153,29 @@ message_t *unpackage_message(char *buf) {
     memcpy(msg->diff[i].path, buf + shift, msg->diff[i].plen);
     shift += msg->diff[i].plen;
 
-    memcpy(&blen, buf + shift, 4);
-    msg->diff[i].blen = ntohl(blen);
+    memcpy(&llen, buf + shift, 4);
+    msg->diff[i].llen = ntohl(llen);
     shift += 4;
 
-    msg->diff[i].body = (char *)malloc(msg->diff[i].blen);
-    memcpy(msg->diff[i].body, buf + shift, msg->diff[i].blen);
-    shift += msg->diff[i].blen;
+    for (size_t j = 0; j < msg->diff[i].llen; j++) {
+      uint32_t num;
+      uint32_t len;
 
+      memcpy(&num, buf + shift, 4);
+      msg->diff[i].lines[j].num = ntohl(num);
+      shift += 4;
 
-    printf("diff-%zu body=%s path=%s\n", i, msg->diff[i].body, msg->diff[i].path);
+      memcpy(&len, buf + shift, 4);
+      msg->diff[i].lines[j].len = ntohl(len);
+      shift += 4;
+
+      msg->diff[i].lines[j].body = (char*)malloc(msg->diff[i].lines[j].len);
+      memcpy(msg->diff[i].lines[j].body, buf + shift, msg->diff[i].lines[j].len);
+      shift += msg->diff[i].lines[j].len;
+
+      printf("diff=%zu line=%d body=%s path=%s\n", i, msg->diff[i].lines[j].num, msg->diff[i].lines[j].body, msg->diff[i].path);
+
+    }
   }
 
   return msg;
@@ -206,9 +261,12 @@ void receive_messages(int conn_d, node_t *node) {
 
 int send_message(int conn_d, message_t *msg) {
   printf("sending message\n");
-  uint32_t total_bytes = MSG_HEADER_BYTES + 4 + 4;
+  uint32_t total_bytes =  + MSG_HEADER_BYTES + 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4 + msg->diff[i].blen + 4;
+    total_bytes += 4 + msg->diff[i].plen + 4;
+    for (size_t j = 0; j < msg->diff[i].llen; j++) {
+      total_bytes += 4 + 4 + msg->diff[i].lines[j].len;
+    }
   }
   char *buf = package_message(msg);
 
@@ -223,6 +281,8 @@ int send_message(int conn_d, message_t *msg) {
     sent += n;
   }
 
+  printf("sent %d bytes\n", sent);
+
   if (n < 0) {
     perror("error sending bytes");
     return -1;
@@ -232,6 +292,7 @@ int send_message(int conn_d, message_t *msg) {
 }
 
 void on_message_received(int conn_d, message_t *msg, node_t *node) {
+  printf("message received of type %s\n", message_kind_str(msg->kind));
   switch (msg->kind) {
   case MSG_CONTENT: {
     message_t re_msg = {.kind = MSG_ACK};
@@ -239,9 +300,10 @@ void on_message_received(int conn_d, message_t *msg, node_t *node) {
     break;
   }
   case CLIENT_HELLO: {
-    fdiff_t diff = {.plen = 5, .path = "abcde", .blen = 5, .body = "12345"};
+    fline_t* lines = read_file(node->file.path);
+    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines };
     message_t re_msg = {
-        .kind = MSG_CONTENT,
+        .kind = SERVER_HELLO,
         .dlen = 1,
         .diff = (fdiff_t[]){diff},
     };
