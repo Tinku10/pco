@@ -147,8 +147,6 @@ message_t *unpackage_message(char *buf) {
 
   // deserialize to fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
-    msg->diff[i].lines = (fline_t*)malloc(msg->diff[i].llen * sizeof(fline_t));
-
     uint32_t plen;
     uint32_t llen;
     diff_kind dkind;
@@ -168,6 +166,8 @@ message_t *unpackage_message(char *buf) {
     memcpy(&llen, buf + shift, 4);
     msg->diff[i].llen = ntohl(llen);
     shift += 4;
+
+    msg->diff[i].lines = (fline_t*)malloc(msg->diff[i].llen * sizeof(fline_t));
 
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       uint32_t num;
@@ -250,10 +250,8 @@ char *recv_message(int conn_d, int req) {
   return buf;
 }
 
-void receive_messages(int conn_d, node_t *node) {
+void receive_messages(int conn_d, const node_t *node) {
   // message_t buf;
-  int n = 0;
-
   printf("waiting on data\n");
   // pthread_t conn_thread;
 
@@ -303,7 +301,7 @@ int send_message(int conn_d, message_t *msg) {
   return 0;
 }
 
-void on_message_received(int conn_d, message_t *msg, node_t *node) {
+void on_message_received(int conn_d, message_t *msg, const node_t *node) {
   printf("message received of type %s\n", message_kind_str(msg->kind));
   switch (msg->kind) {
   case MSG_CONTENT: 
@@ -314,7 +312,7 @@ void on_message_received(int conn_d, message_t *msg, node_t *node) {
   }
   case CLIENT_HELLO: {
     fline_t* lines = read_file(node->file.path);
-    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines, .kind = DIFF_ADDED };
+    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines, .kind = DIFF_ADDED, };
     message_t re_msg = {
         .kind = SERVER_HELLO,
         .dlen = 1,
