@@ -24,7 +24,7 @@ fline_t* read_file(char* path) {
   while ((read = getline(&line, &len, fd)) != -1) {
     char *dline = (char*)malloc(read + 1); 
     strcpy(dline, line);
-    fline_t curr_line = { .len = read, .num = lnum++, .body = dline};
+    fline_t curr_line = { .len = read, .num = lnum++, .body = dline, .kind = DIFF_ADDED};
     arrput(lines, curr_line);
   }
 

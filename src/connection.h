@@ -33,13 +33,13 @@ typedef struct {
 } file_t;
 
 typedef struct {
+  diff_kind kind;
   uint32_t num;
   uint32_t len;
   char *body;
 } fline_t;
 
 typedef struct {
-  diff_kind kind;
   // file path
   char *path;
   uint32_t plen;
