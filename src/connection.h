@@ -27,6 +27,15 @@ typedef enum {
   DIFF_DELETED,
 } diff_kind;
 
+static const char* diff_kind_str(int v) {
+    switch ((diff_kind)v) {
+      case DIFF_ADDED: return "DIFF_ADDED";
+      case DIFF_MODIFIED: return "DIFF_MODIFIED";
+      case DIFF_DELETED: return "DIFF_DELETED";
+    }
+    return "UNKNOWN";
+}
+
 // attributes of file/directory
 typedef struct {
   char *path;
