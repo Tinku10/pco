@@ -57,8 +57,17 @@ typedef struct {
   // body
   // char *body;
   uint32_t llen;
-  fline_t* lines;
+  fline_t *lines;
 } fdiff_t;
+
+
+typedef struct message {
+  message_kind kind;
+  // char* body;
+  // size_t blen;
+  fdiff_t *diff;
+  size_t dlen;
+} message_t;
 
 typedef struct node {
   unsigned int id;
@@ -73,20 +82,21 @@ typedef struct node {
   pthread_t cthread;
   // information about the file/directory
   file_t file;
+  // queue to put received messages
+  message_t** inbox;
+  // pipe to send event on data available
+  int event[2];
 } node_t;
 
-typedef struct message {
-  message_kind kind;
-  // char* body;
-  // size_t blen;
-  fdiff_t *diff;
-  size_t dlen;
-} message_t;
+const char *message_kind_str(message_kind);
+const char *diff_kind_str(diff_kind);
 
 int server_start(node_t *, int port, char *);
 int client_connect(char *ip, int port);
 int client_hello(const node_t *);
-int client_listen(int socket, node_t* node);
+// int client_listen(int socket, node_t *node);
+int client_listen(node_t*, char* ip, int port);
+int client_send(node_t*, message_t*);
 
 // serialization
 char *package_message(message_t *);

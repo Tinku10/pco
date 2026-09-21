@@ -1,4 +1,6 @@
 #include "connection.h"
+#include "log.h"
+#include "queue.h"
 
 typedef struct {
 
@@ -24,7 +26,7 @@ int setup_server_socket(node_t *s, int port) {
   }
 
   unsigned int ip = ntohl(server_addr.sin_addr.s_addr);
-  printf("server bound to ip: %u.%u.%u.%u\n", (ip >> 24) & 0xFF,
+  dbg_print("server bound to ip: %u.%u.%u.%u\n", (ip >> 24) & 0xFF,
          (ip >> 16) & 0xFF, (ip >> 8) & 0xFF, ip & 0xFF);
 
   if (listen(socket_d, MAX_CLIENTS) < 0) {
@@ -38,7 +40,7 @@ int setup_server_socket(node_t *s, int port) {
 }
 
 void *accept_connections(void *ts) {
-  int n = 0;
+  dbg_print("accepting new connections\n");
 
   struct sockaddr client_addr;
 
@@ -48,12 +50,12 @@ void *accept_connections(void *ts) {
     socklen_t clen = sizeof(client_addr);
     int conn_d = accept(s->socket_d, &client_addr, &clen);
 
-    printf("new client incoming\n");
+    dbg_print("new client incoming\n");
 
     // add the client address to the list of known clients
     s->other_connected_sockets[s->other_cnt++] = conn_d;
 
-    printf("client connection established on socket %d\n", conn_d);
+    dbg_print("client connection established on socket %d\n", conn_d);
 
     // send client hello
 
@@ -63,16 +65,23 @@ void *accept_connections(void *ts) {
   close(s->socket_d);
 }
 
-int server_start(node_t *s, int port, char* file) {
-  s->other_cnt = 0;
-  s->file.path = file;
+int server_start(node_t *node, int port, char* file) {
+  // node setup
+  node->other_cnt = 0;
+  node->file.path = file;
+  // set up the pipe
+  if (pipe(node->event) == -1) {
+    perror("failed to set up pipe");
+    return -1;
+  }
+  // initialize the queue for the node
+  qinit(&node->inbox);
 
-  fflush(stdout);
-  if (setup_server_socket(s, port) < 0) {
+  if (setup_server_socket(node, port) < 0) {
     return -1;
   }
 
-  if (pthread_create(&s->sthread, NULL, accept_connections, (void *)s) < 0) {
+  if (pthread_create(&node->sthread, NULL, accept_connections, (void *)node) < 0) {
     perror("error spinning server in a separate thread");
     return -1;
   }

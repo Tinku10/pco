@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
       {"dhost", optional_argument, NULL, 'h'},
       {"dport", optional_argument, NULL, 'd'},
       {"path", optional_argument, NULL, 'p'},
+      {0, 0, 0, 0},
   };
 
   while ((opt = getopt_long(argc, argv, "s:h:d:p:", flags, NULL)) != -1) {
@@ -45,14 +46,16 @@ int main(int argc, char **argv) {
 
   if (host != NULL) {
     // join a node
-    int sd = client_connect(host, dport);
-    client_hello(sd, &s);
+    // int sd = client_connect(host, dport);
+    client_listen(&s, host, dport);
+    client_hello(&s);
+
+    pthread_join(s.cthread, NULL);
   } else {
     // start a server that others can join
     server_start(&s, sport, path);
+    pthread_join(s.sthread, NULL);
   }
-
-  pthread_join(s.thread, NULL);
 
   return 0;
 }

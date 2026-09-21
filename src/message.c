@@ -1,7 +1,9 @@
-#include <stb_ds.h>
 #include "connection.h"
 #include "fileio.h"
+#include "log.h"
+#include "queue.h"
 #include "string.h"
+#include <stb_ds.h>
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {
@@ -13,6 +15,19 @@ const char *message_kind_str(message_kind kind) {
     return "CLIENT_HELLO";
   case SERVER_HELLO:
     return "SERVER_HELLO";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+const char *diff_kind_str(diff_kind kind) {
+  switch (kind) {
+  case DIFF_ADDED:
+    return "DIFF_ADDED";
+  case DIFF_DELETED:
+    return "DIFF_DELETED";
+  case DIFF_MODIFIED:
+    return "DIFF_MODIFIED";
   default:
     return "UNKNOWN";
   }
@@ -43,7 +58,7 @@ const char *message_kind_str(message_kind kind) {
 //        | diff (dlen) ... |
 // a header of 4 bytes will be added to help `recv()` know how much to read
 char *package_message(message_t *msg) {
-  printf("packing message\n");
+  dbg_print("packing message\n");
 
   // total bytes excluding header
   uint32_t total_bytes = 4 + 4;
@@ -90,7 +105,8 @@ char *package_message(message_t *msg) {
       shift += 4;
       memcpy(buf + shift, &len, 4);
       shift += 4;
-      memcpy(buf + shift, msg->diff[i].lines[j].body, msg->diff[i].lines[j].len);
+      memcpy(buf + shift, msg->diff[i].lines[j].body,
+             msg->diff[i].lines[j].len);
       shift += msg->diff[i].lines[j].len;
     }
   }
@@ -100,7 +116,7 @@ char *package_message(message_t *msg) {
   // total_bytes; i++) {
   //   printf("%02x ", (unsigned char)buf[i]);
   // }
-  printf("packing complete\n");
+  dbg_print("packing complete\n");
 
   return buf;
 }
@@ -127,7 +143,7 @@ char *package_message(message_t *msg) {
 //        ...
 //        | diff (dlen) ... |
 message_t *unpackage_message(char *buf) {
-  printf("unpacking message\n");
+  dbg_print("unpacking message\n");
 
   message_t *msg = (message_t *)malloc(sizeof(message_t));
 
@@ -154,15 +170,16 @@ message_t *unpackage_message(char *buf) {
     msg->diff[i].plen = ntohl(plen);
     shift += 4;
 
-    msg->diff[i].path = (char *)malloc(msg->diff[i].plen);
+    msg->diff[i].path = (char *)malloc(msg->diff[i].plen + 1);
     memcpy(msg->diff[i].path, buf + shift, msg->diff[i].plen);
+    msg->diff[i].path[msg->diff[i].plen] = '\0';
     shift += msg->diff[i].plen;
 
     memcpy(&llen, buf + shift, 4);
     msg->diff[i].llen = ntohl(llen);
     shift += 4;
 
-    msg->diff[i].lines = (fline_t*)malloc(msg->diff[i].llen * sizeof(fline_t));
+    msg->diff[i].lines = (fline_t *)malloc(msg->diff[i].llen * sizeof(fline_t));
 
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       uint32_t num;
@@ -181,12 +198,15 @@ message_t *unpackage_message(char *buf) {
       msg->diff[i].lines[j].len = ntohl(len);
       shift += 4;
 
-      msg->diff[i].lines[j].body = (char*)malloc(msg->diff[i].lines[j].len);
-      memcpy(msg->diff[i].lines[j].body, buf + shift, msg->diff[i].lines[j].len);
+      msg->diff[i].lines[j].body = (char *)malloc(msg->diff[i].lines[j].len + 1);
+      memcpy(msg->diff[i].lines[j].body, buf + shift,
+             msg->diff[i].lines[j].len);
+      msg->diff[i].lines[j].body[msg->diff[i].lines[j].len] = '\0';
       shift += msg->diff[i].lines[j].len;
 
-      printf("diff=%zu line=%d body=%s path=%s\n", i, msg->diff[i].lines[j].num, msg->diff[i].lines[j].body, msg->diff[i].path);
-
+      dbg_print("diff=%zu line=%d body=%s path=%s\n", i,
+                msg->diff[i].lines[j].num, msg->diff[i].lines[j].body,
+                msg->diff[i].path);
     }
   }
 
@@ -200,7 +220,7 @@ int recv_header(int conn_d) {
 
   uint8_t buf[MSG_HEADER_BYTES] = {0};
 
-  printf("checking for %d bytes header\n", MSG_HEADER_BYTES);
+  dbg_print("checking for %d bytes header\n", MSG_HEADER_BYTES);
 
   while (received < MSG_HEADER_BYTES) {
     n = recv(conn_d, buf + received, MSG_HEADER_BYTES - received, 0);
@@ -208,7 +228,7 @@ int recv_header(int conn_d) {
       break;
 
     received += n;
-    printf("read %d bytes\n", n);
+    dbg_print("read %d bytes\n", n);
   }
 
   if (n < 0) {
@@ -220,7 +240,7 @@ int recv_header(int conn_d) {
   memcpy(&header, buf, sizeof(header));
   header = ntohl(header);
 
-  printf("header: %d\n", header);
+  dbg_print("header: %d\n", header);
 
   return header;
 }
@@ -229,7 +249,7 @@ char *recv_message(int conn_d, int req) {
   int received = 0;
   int n = 0;
 
-  printf("checking for %d bytes message body\n", req);
+  dbg_print("checking for %d bytes message body\n", req);
 
   char *buf = (char *)malloc(req);
 
@@ -239,7 +259,7 @@ char *recv_message(int conn_d, int req) {
       break;
 
     received += n;
-    printf("read %d bytes\n", n);
+    dbg_print("read %d bytes\n", n);
   }
 
   if (n < 0) {
@@ -252,8 +272,7 @@ char *recv_message(int conn_d, int req) {
 
 void receive_messages(int conn_d, const node_t *node) {
   // message_t buf;
-  printf("waiting on data\n");
-  // pthread_t conn_thread;
+  dbg_print("waiting on data\n");
 
   size_t header;
   while ((header = recv_header(conn_d)) > 0) {
@@ -264,14 +283,15 @@ void receive_messages(int conn_d, const node_t *node) {
     on_message_received(conn_d, msg, node);
   }
 
-  printf("closing server connection\n");
+  dbg_print("closing connection\n");
 
+  qfree(&node->inbox);
   close((int)conn_d);
 }
 
 int send_message(int conn_d, message_t *msg) {
-  printf("sending message\n");
-  uint32_t total_bytes =  + MSG_HEADER_BYTES + 4 + 4;
+  dbg_print("sending message\n");
+  uint32_t total_bytes = +MSG_HEADER_BYTES + 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
     total_bytes += 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
@@ -291,7 +311,7 @@ int send_message(int conn_d, message_t *msg) {
     sent += n;
   }
 
-  printf("sent %d bytes\n", sent);
+  dbg_print("sent %d bytes\n", sent);
 
   if (n < 0) {
     perror("error sending bytes");
@@ -302,17 +322,23 @@ int send_message(int conn_d, message_t *msg) {
 }
 
 void on_message_received(int conn_d, message_t *msg, const node_t *node) {
-  printf("message received of type %s\n", message_kind_str(msg->kind));
+  dbg_print("message received of type %s\n", message_kind_str(msg->kind));
   switch (msg->kind) {
-  case MSG_CONTENT: 
+  case MSG_CONTENT:
   case SERVER_HELLO: {
+    uint8_t byte = 1;
+    write(node->event[1], &byte, 1);
+    qput(&node->inbox, msg);
     message_t re_msg = {.kind = MSG_ACK};
     send_message(conn_d, &re_msg);
     break;
   }
   case CLIENT_HELLO: {
-    fline_t* lines = read_file(node->file.path);
-    fdiff_t diff = {.plen = strlen(node->file.path), .path = node->file.path, .llen = arrlen(lines), .lines = lines };
+    fline_t *lines = read_file(node->file.path);
+    fdiff_t diff = {.plen = strlen(node->file.path),
+                    .path = node->file.path,
+                    .llen = arrlen(lines),
+                    .lines = lines};
     message_t re_msg = {
         .kind = SERVER_HELLO,
         .dlen = 1,

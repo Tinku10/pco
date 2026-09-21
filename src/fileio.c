@@ -4,9 +4,10 @@
 #include <stb_ds.h>
 #include <string.h>
 #include "fileio.h"
+#include "log.h"
 
 fline_t* read_file(char* path) {
-  printf("reading file %s\n", path);
+  dbg_print("reading file %s\n", path);
   FILE* fd = fopen(path, "r");
   if (fd == NULL) {
     perror("cannot open file");

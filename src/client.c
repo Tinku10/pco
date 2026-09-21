@@ -1,4 +1,6 @@
 #include "connection.h"
+#include "log.h"
+#include "queue.h"
 
 int client_connect(char *ip, int port) {
   int socket_d = socket(AF_INET, SOCK_STREAM, 0);
@@ -16,6 +18,8 @@ int client_connect(char *ip, int port) {
     perror("failed to connect to server");
     return -1;
   }
+
+  dbg_print("created socket\n");
 
   return socket_d;
 }
@@ -36,8 +40,30 @@ void *await_responses(void *ts) {
   close(s->socket_d);
 }
 
-int client_listen(int socket, node_t* node) {
+// int client_listen(int socket, node_t* node) {
+//   node->socket_d = socket;
+
+//   if (pthread_create(&node->cthread, NULL, await_responses, (void *)node) < 0) {
+//     perror("error spinning client listen in a separate thread");
+//     return -1;
+//   }
+
+//   return 0;
+// }
+
+int client_listen(node_t* node, char* ip, int port) {
+  int socket = client_connect(ip, port);
+
+  // setup node
   node->socket_d = socket;
+  // set up the pipe
+  if (pipe(node->event) == -1) {
+    perror("failed to set up pipe");
+    return -1;
+  }
+  // initialize the queue for the node
+  qinit(&node->inbox);
+
 
   if (pthread_create(&node->cthread, NULL, await_responses, (void *)node) < 0) {
     perror("error spinning client listen in a separate thread");
@@ -45,4 +71,8 @@ int client_listen(int socket, node_t* node) {
   }
 
   return 0;
+}
+
+int client_send(node_t* node, message_t* msg) {
+  return send_message(node->socket_d, msg);
 }
