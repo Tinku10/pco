@@ -1,4 +1,3 @@
-#define STB_DS_IMPLEMENTATION
 #include "diff.h"
 #include "connection.h"
 #include <stb/stb_ds.h>
@@ -16,20 +15,22 @@ fdiff_t *diff_files(file_state *previous_state, file_state *current_state) {
     size_t c_i_len = (current_state->lines + i)->len;
 
     if (p_i_len != c_i_len) {
-      char *line_copy = (char *)malloc(sizeof(char) * c_i_len);
+      char *line_copy = (char *)malloc(sizeof(char) * c_i_len + 1);
       strcpy(line_copy, (current_state->lines + i)->content);
       fline_t d = {.num = i,
                    .body = line_copy,
                    .kind = DIFF_MODIFIED,
                    .len = (current_state->lines + i)->len};
+      line_copy[c_i_len] = '\0';
       arrput(diffs->lines, d);
       diffs->llen++;
     } else {
       for (int j = 0; j < p_i_len; j++) {
         if (*((previous_state->lines + i)->content + j) !=
             *((current_state->lines + i)->content + j)) {
-          char *line_copy = (char *)malloc(sizeof(char) * c_i_len);
+          char *line_copy = (char *)malloc(sizeof(char) * c_i_len + 1);
           strcpy(line_copy, (current_state->lines + i)->content);
+          line_copy[c_i_len] = '\0';
           fline_t d = {.num = i,
                        .body = line_copy,
                        .kind = DIFF_MODIFIED,
@@ -45,8 +46,9 @@ fdiff_t *diff_files(file_state *previous_state, file_state *current_state) {
   // extra lines in current state
   for (int i = previous_state->len; i < current_state->len; i++) {
     char *line_copy =
-        (char *)malloc(sizeof(char) * (current_state->lines + i)->len);
+        (char *)malloc(sizeof(char) * (current_state->lines + i)->len + 1);
     strcpy(line_copy, (current_state->lines + i)->content);
+    line_copy[(current_state->lines + i)->len] = '\0';
     fline_t d = {.num = i,
                  .body = line_copy,
                  .kind = DIFF_ADDED,
