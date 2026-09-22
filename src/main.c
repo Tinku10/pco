@@ -1,5 +1,3 @@
-#define STB_DS_IMPLEMENTATION
-
 #include "connection.h"
 #include <getopt.h>
 

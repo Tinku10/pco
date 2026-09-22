@@ -3,7 +3,7 @@
 #include "log.h"
 #include "queue.h"
 #include "string.h"
-#include <stb_ds.h>
+#include <stb/stb_ds.h>
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {

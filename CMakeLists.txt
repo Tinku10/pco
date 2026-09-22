@@ -25,21 +25,21 @@ find_library(LUAJIT_LIBRARY
 # Create executable
 
 add_library(pco SHARED
-    src/client.c src/server.c src/message.c src/fileio.c src/queue.c bindings/lua.c
+    src/lib.c src/client.c src/server.c src/message.c src/fileio.c src/queue.c src/diff.c bindings/lua.c
 )
 
-target_compile_definitions(pco PRIVATE DEBUG)
+target_compile_definitions(pco PRIVATE)
 
 # target_link_libraries(main PRIVATE uv_a)
 
-target_compile_options(pco PRIVATE -Wall -Wextra -g -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(pco PRIVATE -Wall -Wextra -g -fsanitize=address -fno-omit-frame-pointer)
+target_compile_options(pco PRIVATE -Wall -Wextra -g)
+target_link_options(pco PRIVATE -Wall -Wextra -g)
 
 # target_link_options(main PRIVATE -fsanitize=address)
 
 # Include directories
 target_include_directories(pco PRIVATE 
-  ${CMAKE_SOURCE_DIR}/libs/stb
+  ${CMAKE_SOURCE_DIR}/libs
   ${LUAJIT_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src
 )
@@ -48,10 +48,10 @@ add_executable(pcod
     src/main.c 
 )
 
-target_compile_definitions(pcod PRIVATE DEBUG)
+target_compile_definitions(pcod PRIVATE)
 
 target_include_directories(pcod PRIVATE 
-  ${CMAKE_SOURCE_DIR}/libs/stb
+  ${CMAKE_SOURCE_DIR}/libs
   ${LUAJIT_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src
 )

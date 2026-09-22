@@ -1,7 +1,6 @@
 // #include "connection.h"
-#define STB_DS_IMPLEMENTATION
 #include <stdio.h>
-#include <stb_ds.h>
+#include <stb/stb_ds.h>
 #include <string.h>
 #include "fileio.h"
 #include "log.h"

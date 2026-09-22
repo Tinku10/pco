@@ -1,5 +1,5 @@
 #include "queue.h"
-#include <stb_ds.h>
+#include <stb/stb_ds.h>
 
 void qinit(message_t ***q) {
   *q = NULL; 
