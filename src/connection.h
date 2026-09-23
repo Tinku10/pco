@@ -11,6 +11,7 @@
 #include <unistd.h>
 
 #define MAX_CLIENTS 1
+#define LISTEN_BACKLOG 10
 #define MSG_HEADER_BYTES 4
 
 typedef enum {
@@ -87,7 +88,6 @@ int client_connect(char *ip, int port);
 int client_hello(const node_t *);
 // int client_listen(int socket, node_t *node);
 int client_listen(node_t*, char* ip, int port);
-int client_send(node_t*, message_t*);
 
 // serialization
 char *package_message(message_t *);

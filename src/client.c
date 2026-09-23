@@ -19,13 +19,13 @@ int client_connect(char *ip, int port) {
     return -1;
   }
 
-  dbg_print("created socket\n");
+  dbg_print("created socket %d", socket_d);
 
   return socket_d;
 }
 
 int client_hello(const node_t* node) {
-  message_t msg = { .kind = CLIENT_HELLO};
+  message_t msg = { .kind = CLIENT_HELLO, .dlen = 0};
 
   send_message(node->socket_d, &msg);
 
@@ -36,8 +36,6 @@ void *await_responses(void *ts) {
   node_t *s = (node_t *)ts;
 
   receive_messages(s->socket_d, s);
-
-  close(s->socket_d);
 }
 
 // int client_listen(int socket, node_t* node) {
@@ -73,6 +71,3 @@ int client_listen(node_t* node, char* ip, int port) {
   return 0;
 }
 
-int client_send(node_t* node, message_t* msg) {
-  return send_message(node->socket_d, msg);
-}

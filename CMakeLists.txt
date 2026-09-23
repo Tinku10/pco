@@ -28,12 +28,12 @@ add_library(pco SHARED
     src/lib.c src/client.c src/server.c src/message.c src/fileio.c src/queue.c src/diff.c bindings/lua.c
 )
 
-target_compile_definitions(pco PRIVATE)
+target_compile_definitions(pco PRIVATE DEBUG)
 
 # target_link_libraries(main PRIVATE uv_a)
 
-target_compile_options(pco PRIVATE -Wall -Wextra -g)
-target_link_options(pco PRIVATE -Wall -Wextra -g)
+target_compile_options(pco PRIVATE -Wall -Wextra -g -O0)
+target_link_options(pco PRIVATE -Wall -Wextra -g -O0)
 
 # target_link_options(main PRIVATE -fsanitize=address)
 
@@ -48,7 +48,7 @@ add_executable(pcod
     src/main.c 
 )
 
-target_compile_definitions(pcod PRIVATE)
+target_compile_definitions(pcod PRIVATE DEBUG)
 
 target_include_directories(pcod PRIVATE 
   ${CMAKE_SOURCE_DIR}/libs

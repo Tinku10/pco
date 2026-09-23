@@ -19,7 +19,7 @@ fline_t* read_file(char* path) {
 
   fline_t* lines = NULL;
 
-  int lnum = 1;
+  int lnum = 0;
 
   while ((read = getline(&line, &len, fd)) != -1) {
     char *dline = (char*)malloc(read + 1); 

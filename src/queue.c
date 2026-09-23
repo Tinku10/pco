@@ -1,5 +1,6 @@
 #include "queue.h"
 #include <stb/stb_ds.h>
+#include "log.h"
 
 void qinit(message_t ***q) {
   *q = NULL; 
@@ -8,6 +9,7 @@ void qinit(message_t ***q) {
 int qput(message_t ***q, message_t *msg) {
   // add mutex around write?
   arrpush(*q, msg);
+  dbg_print("message pushed, new size %d", arrlen(*q));
   return 0;
 }
 

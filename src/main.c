@@ -1,5 +1,6 @@
 #include "connection.h"
 #include <getopt.h>
+#include "diff.h"
 
 int main(int argc, char **argv) {
   setbuf(stdout, NULL);
@@ -47,6 +48,9 @@ int main(int argc, char **argv) {
     // int sd = client_connect(host, dport);
     client_listen(&s, host, dport);
     client_hello(&s);
+    fdiff_t* d = get_buffer_diff("abc", "ab");
+    message_t msg = { .kind = MSG_CONTENT, .diff = d, .dlen = 1};
+    send_message(s.socket_d, &msg);
 
     pthread_join(s.cthread, NULL);
   } else {

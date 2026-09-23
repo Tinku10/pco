@@ -10,6 +10,8 @@ fdiff_t *diff_files(file_state *previous_state, file_state *current_state) {
   fdiff_t *diffs = (fdiff_t *)malloc(sizeof(fdiff_t));
   diffs->llen = 0;
   diffs->lines = NULL;
+  diffs->path = "";
+  diffs->plen = 0;
   for (int i = 0; i < MIN(previous_state->len, current_state->len); i++) {
     size_t p_i_len = (previous_state->lines + i)->len;
     size_t c_i_len = (current_state->lines + i)->len;
@@ -76,7 +78,8 @@ file_state *wrap_buffer(char *buffer) {
     size_t m_len = end - start;
     char *m_content = (char *)malloc(sizeof(char) * m_len + 1);
     memcpy(m_content, start, m_len);
-    file_line m_line = {.content = m_content, .len = m_len};
+    m_content[m_len] = '\0';
+    file_line m_line = {.content =  m_content, .len = m_len};
     arrput(state->lines, m_line);
     state->len++;
     start = end + 1;
@@ -86,6 +89,7 @@ file_state *wrap_buffer(char *buffer) {
     size_t m_len = end - start;
     char *m_content = (char *)malloc(sizeof(char) * m_len + 1);
     memcpy(m_content, start, m_len);
+    m_content[m_len] = '\0';
     file_line m_line = {.content = m_content, .len = m_len};
     arrput(state->lines, m_line);
     state->len++;
@@ -101,10 +105,10 @@ fdiff_t *get_buffer_diff(char *buffer_previous, char *buffer_current) {
   fdiff_t *diff = diff_files(previous_state, current_state);
 
   // free state buffers
-  free(previous_state->lines);
-  free(current_state->lines);
-  free(previous_state);
-  free(current_state);
+  // arrfree(previous_state->lines);
+  // arrfree(current_state->lines);
+  // free(previous_state);
+  // free(current_state);
 
   return diff;
 }

@@ -4,6 +4,7 @@
 #include "queue.h"
 #include "string.h"
 #include <stb/stb_ds.h>
+#include "errno.h"
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {
@@ -70,10 +71,14 @@ char *package_message(message_t *msg) {
   }
   char *buf = (char *)malloc(MSG_HEADER_BYTES + total_bytes);
 
+  dbg_print("message size %d", total_bytes);
+
   // serialize message_t
   uint32_t total = htonl(total_bytes);
   uint32_t kind = htonl(msg->kind);
   uint32_t dlen = htonl(msg->dlen);
+
+  dbg_print("header %d", total_bytes);
 
   memcpy(buf, &total, MSG_HEADER_BYTES);
   memcpy(buf + MSG_HEADER_BYTES, &kind, 4);
@@ -187,7 +192,7 @@ message_t *unpackage_message(char *buf) {
       diff_kind dkind;
 
       memcpy(&dkind, buf + shift, 4);
-      msg->diff[i].lines[i].kind = ntohl(dkind);
+      msg->diff[i].lines[j].kind = ntohl(dkind);
       shift += 4;
 
       memcpy(&num, buf + shift, 4);
@@ -198,7 +203,8 @@ message_t *unpackage_message(char *buf) {
       msg->diff[i].lines[j].len = ntohl(len);
       shift += 4;
 
-      msg->diff[i].lines[j].body = (char *)malloc(msg->diff[i].lines[j].len + 1);
+      msg->diff[i].lines[j].body =
+          (char *)malloc(msg->diff[i].lines[j].len + 1);
       memcpy(msg->diff[i].lines[j].body, buf + shift,
              msg->diff[i].lines[j].len);
       msg->diff[i].lines[j].body[msg->diff[i].lines[j].len] = '\0';
@@ -218,22 +224,26 @@ int recv_header(int conn_d) {
   int received = 0;
   int n = 0;
 
-  uint8_t buf[MSG_HEADER_BYTES] = {0};
+  uint8_t buf[MSG_HEADER_BYTES] = {0, 0, 0, 0};
 
   dbg_print("checking for %d bytes header\n", MSG_HEADER_BYTES);
 
   while (received < MSG_HEADER_BYTES) {
+    dbg_print("received %d", received);
     n = recv(conn_d, buf + received, MSG_HEADER_BYTES - received, 0);
-    if (n <= 0)
-      break;
+    dbg_print("received %d", n);
+    if (n < 0) {
+      perror("problem in receiving bytes");
+      return -1;
+    }
+
+    if (n == 0) {
+      fprintf(stderr, "peer closed connection\n");
+      return -1;
+    }
 
     received += n;
     dbg_print("read %d bytes\n", n);
-  }
-
-  if (n < 0) {
-    perror("error while reading header");
-    return -1;
   }
 
   uint32_t header;
@@ -255,16 +265,18 @@ char *recv_message(int conn_d, int req) {
 
   while (received < req) {
     n = recv(conn_d, buf + received, req - received, 0);
-    if (n <= 0)
-      break;
+    if (n < 0) {
+      perror("problem in receiving bytes");
+      return NULL;
+    }
+
+    if (n == 0) {
+      fprintf(stderr, "peer closed connection\n");
+      return NULL;
+    }
 
     received += n;
     dbg_print("read %d bytes\n", n);
-  }
-
-  if (n < 0) {
-    perror("error while reading message body");
-    return NULL;
   }
 
   return buf;
@@ -274,7 +286,7 @@ void receive_messages(int conn_d, const node_t *node) {
   // message_t buf;
   dbg_print("waiting on data\n");
 
-  size_t header;
+  int32_t header;
   while ((header = recv_header(conn_d)) > 0) {
     char *buf = recv_message(conn_d, header);
     if (buf == NULL)
@@ -283,41 +295,50 @@ void receive_messages(int conn_d, const node_t *node) {
     on_message_received(conn_d, msg, node);
   }
 
-  dbg_print("closing connection\n");
+  dbg_print("closing connection on %d", conn_d);
 
-  qfree(&node->inbox);
-  close((int)conn_d);
+  close(conn_d);
 }
 
 int send_message(int conn_d, message_t *msg) {
-  dbg_print("sending message\n");
-  uint32_t total_bytes = +MSG_HEADER_BYTES + 4 + 4;
+  dbg_print("sending message %s\n", message_kind_str(msg->kind));
+  uint32_t total_bytes = MSG_HEADER_BYTES + 4 + 4;
   for (size_t i = 0; i < msg->dlen; i++) {
     total_bytes += 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len;
     }
   }
+
   char *buf = package_message(msg);
+
+  dbg_print("sending message %d", total_bytes);
 
   int sent = 0;
   int n = 0;
 
   while (sent < total_bytes) {
-    n = send(conn_d, buf, total_bytes - sent, 0);
-    if (n <= 0)
-      break;
+    n = send(conn_d, buf + sent, total_bytes - sent, 0);
+    if (n < 0) {
+      if (errno == EINTR)
+        continue;
+      perror("unable to send message");
+      free(buf);
+      return -1;
+    }
+
+    if (n == 0) {
+      fprintf(stderr, "send failed\n");
+      free(buf);
+      return -1;
+    }
 
     sent += n;
   }
 
   dbg_print("sent %d bytes\n", sent);
 
-  if (n < 0) {
-    perror("error sending bytes");
-    return -1;
-  }
-
+  free(buf);
   return 0;
 }
 
@@ -327,9 +348,11 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
   case MSG_CONTENT:
   case SERVER_HELLO: {
     uint8_t byte = 1;
-    write(node->event[1], &byte, 1);
     qput(&node->inbox, msg);
-    message_t re_msg = {.kind = MSG_ACK};
+    if (write(node->event[1], &byte, 1) < 0) {
+      perror("failed to write wake up");
+    }
+    message_t re_msg = {.kind = MSG_ACK, .dlen = 0};
     send_message(conn_d, &re_msg);
     break;
   }
