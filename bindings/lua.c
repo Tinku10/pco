@@ -1,12 +1,11 @@
 #include "connection.h"
+#include "diff.h"
 #include "log.h"
 #include "queue.h"
-#include "diff.h"
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
 #include <stb/stb_ds.h>
-
 
 // node_t build_node(lua_State* L) {
 //   node_t node;
@@ -16,47 +15,53 @@
 //   lua_getfield(L, 1, "")
 // }
 
-int lua_client_connect(lua_State *L) {
-  char *host = luaL_checkstring(L, 1);
-  int dport = luaL_checkint(L, 2);
+// int lua_client_connect(lua_State *L) {
+//   char *host = luaL_checkstring(L, 1);
+//   int dport = luaL_checkint(L, 2);
 
-  int socket = client_connect(host, dport);
+//   int socket = client_connect(host, dport);
 
-  lua_pushnumber(L, socket);
+//   lua_pushnumber(L, socket);
 
-  return 1;
-}
+//   return 1;
+// }
 
 int lua_client_listen(lua_State *L) {
-  node_t *node = (node_t *)malloc(sizeof(node_t));
-
-  dbg_print("node address %zu", (size_t)node);
+  // node_t *node = (node_t *)malloc(sizeof(node_t));
 
   char *host = luaL_checkstring(L, 1);
   int dport = luaL_checkint(L, 2);
+
+  node_t *node = lua_newuserdata(L, sizeof(*node));
+  // dbg_print("node address %zu", (size_t)node);
 
   client_listen(node, host, dport);
 
-  lua_pushinteger(L, (size_t)node);
+  luaL_getmetatable(L, "Node");
+  lua_setmetatable(L, -2);
+  // lua_pushinteger(L, (size_t)node);
 
   return 1;
 }
 
 int lua_client_hello(lua_State *L) {
-  size_t address = luaL_checklong(L, 1);
-  node_t *node = (node_t *)address;
+  node_t *node = luaL_checkudata(L, 1, "Node");
 
-  dbg_print("node address %zu", (size_t)node);
+  // size_t address = luaL_checklong(L, 1);
+  // node_t *node = (node_t *)address;
+
+  // dbg_print("node address %zu", (size_t)node);
   client_hello(node);
 
   return 0;
 }
 
 int lua_get_message(lua_State *L) {
-  size_t address = luaL_checkinteger(L, 1);
-  node_t *node = (node_t *)address;
+  node_t *node = luaL_checkudata(L, 1, "Node");
+  // size_t address = luaL_checkinteger(L, 1);
+  // node_t *node = (node_t *)address;
 
-  dbg_print("getting message from %s\n", node->socket_d);
+  dbg_print("getting message from %d, left=%d\n", node->socket_d, arrlen(node->inbox));
 
   message_t *msg = qpop(&node->inbox);
   if (msg == NULL) {
@@ -116,8 +121,9 @@ int lua_get_message(lua_State *L) {
 }
 
 int lua_get_eventfd(lua_State *L) {
-  size_t address = luaL_checkinteger(L, 1);
-  node_t *node = (node_t *)address;
+  node_t *node = luaL_checkudata(L, 1, "Node");
+  // size_t address = luaL_checkinteger(L, 1);
+  // node_t *node = (node_t *)address;
 
   lua_pushnumber(L, node->event[0]);
 
@@ -126,18 +132,20 @@ int lua_get_eventfd(lua_State *L) {
 
 int lua_send_message(lua_State *L) {
   dbg_print("inside send message");
-  size_t address = luaL_checkinteger(L, 1);
-  node_t *node = (node_t *)address;
+  node_t *node = luaL_checkudata(L, 1, "Node");
+  // size_t address = luaL_checkinteger(L, 1);
+  // node_t *node = (node_t *)address;
 
-  char *prev_state = luaL_checkstring(L, 2);
-  char *curr_state = luaL_checkstring(L, 3);
+  char *path = luaL_checkstring(L, 2);
+  char *prev_state = luaL_checkstring(L, 3);
+  char *curr_state = luaL_checkstring(L, 4);
   dbg_print("diff calculation begins");
 
-  fdiff_t *diff = get_buffer_diff(prev_state, curr_state);
+  fdiff_t *diff = get_buffer_diff(path, prev_state, curr_state);
   message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = diff};
   dbg_print("diff calculation ends");
 
-  send_message(node->socket_d, &msg);
+  send_message(node->connected_sockets[0], &msg);
   dbg_print("message sent");
 
   return 0;
@@ -147,11 +155,12 @@ int lua_server_start(lua_State *L) {
   int port = luaL_checkint(L, 1);
   char *path = luaL_checkstring(L, 2);
 
-  node_t *node = (node_t *)malloc(sizeof(node_t));
+  node_t *node = lua_newuserdata(L, sizeof(*node));
 
   server_start(node, port, path);
 
-  lua_pushinteger(L, (size_t)node);
+  luaL_getmetatable(L, "Node");
+  lua_setmetatable(L, -2);
 
   return 1;
 }
@@ -169,6 +178,10 @@ static const struct luaL_Reg lib[] = {
 };
 
 int luaopen_mylib(lua_State *L) {
+  // register Node userdata type
+  luaL_newmetatable(L, "Node");
+  lua_pop(L, 1);
+
   luaL_openlib(L, "pco", lib, 0);
   return 1;
 }
