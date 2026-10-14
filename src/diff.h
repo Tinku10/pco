@@ -14,5 +14,5 @@ typedef struct {
 
 fdiff_t* diff_files(file_state*, file_state*);
 file_state *wrap_buffer(char*);
-fdiff_t* get_buffer_diff(char*, char*);
+fdiff_t* get_buffer_diff(char*, char*, char*);
 #endif

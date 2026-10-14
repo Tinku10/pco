@@ -98,11 +98,13 @@ file_state *wrap_buffer(char *buffer) {
   return state;
 }
 
-fdiff_t *get_buffer_diff(char *buffer_previous, char *buffer_current) {
+fdiff_t *get_buffer_diff(char* path, char *buffer_previous, char *buffer_current) {
   file_state *previous_state = wrap_buffer(buffer_previous);
   file_state *current_state = wrap_buffer(buffer_current);
 
   fdiff_t *diff = diff_files(previous_state, current_state);
+  diff->plen = strlen(path);
+  diff->path = strdup(path);
 
   // free state buffers
   // arrfree(previous_state->lines);
