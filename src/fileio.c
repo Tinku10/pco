@@ -22,6 +22,11 @@ fline_t* read_file(char* path) {
   int lnum = 0;
 
   while ((read = getline(&line, &len, fd)) != -1) {
+    // keep lines without trailing newline characters
+    if (line[read - 1] == '\n') {
+      line[read - 1] = '\0';
+      read--;
+    }
     char *dline = (char*)malloc(read + 1); 
     strcpy(dline, line);
     fline_t curr_line = { .len = read, .num = lnum++, .body = dline, .kind = DIFF_ADDED};
