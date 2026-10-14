@@ -52,6 +52,11 @@ typedef struct {
   fline_t *lines;
 } fdiff_t;
 
+typedef enum {
+  NODE_ADMIN,
+  NODE_CONTRIBUTOR,
+} node_kind;
+
 
 typedef struct message {
   message_kind kind;
@@ -62,12 +67,13 @@ typedef struct message {
 } message_t;
 
 typedef struct node {
+  node_kind kind;
   unsigned int id;
   // other conected socket descriptors
-  int other_connected_sockets[MAX_CLIENTS];
+  int connected_sockets[MAX_CLIENTS];
   // listening socket of self
   int socket_d;
-  unsigned int other_cnt;
+  unsigned int connections;
   // thread on which the server is listening on
   pthread_t sthread;
   // thread on which the client is listening on

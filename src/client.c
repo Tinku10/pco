@@ -27,7 +27,7 @@ int client_connect(char *ip, int port) {
 int client_hello(const node_t* node) {
   message_t msg = { .kind = CLIENT_HELLO, .dlen = 0};
 
-  send_message(node->socket_d, &msg);
+  send_message(node->connected_sockets[0], &msg);
 
   return 0;
 }
@@ -35,7 +35,9 @@ int client_hello(const node_t* node) {
 void *await_responses(void *ts) {
   node_t *s = (node_t *)ts;
 
-  receive_messages(s->socket_d, s);
+  receive_messages(s->connected_sockets[0], s);
+
+  return NULL;
 }
 
 // int client_listen(int socket, node_t* node) {
@@ -53,7 +55,9 @@ int client_listen(node_t* node, char* ip, int port) {
   int socket = client_connect(ip, port);
 
   // setup node
-  node->socket_d = socket;
+  node->connections = 0;
+  node->connected_sockets[node->connections++] = socket;
+  node->kind = NODE_CONTRIBUTOR;
   // set up the pipe
   if (pipe(node->event) == -1) {
     perror("failed to set up pipe");

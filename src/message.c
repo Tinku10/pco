@@ -1,10 +1,10 @@
 #include "connection.h"
+#include "errno.h"
 #include "fileio.h"
 #include "log.h"
 #include "queue.h"
 #include "string.h"
 #include <stb/stb_ds.h>
-#include "errno.h"
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {
@@ -221,17 +221,17 @@ message_t *unpackage_message(char *buf) {
 
 int recv_header(int conn_d) {
   // header is of four bytes
-  int received = 0;
-  int n = 0;
+  size_t received = 0;
+  ssize_t n = 0;
 
   uint8_t buf[MSG_HEADER_BYTES] = {0, 0, 0, 0};
 
   dbg_print("checking for %d bytes header\n", MSG_HEADER_BYTES);
 
   while (received < MSG_HEADER_BYTES) {
-    dbg_print("received %d", received);
+    dbg_print("conn_d=%d buf=%p received=%zu len=%zu\n", conn_d, (void *)buf,
+              received, MSG_HEADER_BYTES - received);
     n = recv(conn_d, buf + received, MSG_HEADER_BYTES - received, 0);
-    dbg_print("received %d", n);
     if (n < 0) {
       perror("problem in receiving bytes");
       return -1;
@@ -322,6 +322,7 @@ int send_message(int conn_d, message_t *msg) {
     if (n < 0) {
       if (errno == EINTR)
         continue;
+
       perror("unable to send message");
       free(buf);
       return -1;
@@ -351,12 +352,19 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
     qput(&node->inbox, msg);
     if (write(node->event[1], &byte, 1) < 0) {
       perror("failed to write wake up");
+      return;
     }
     message_t re_msg = {.kind = MSG_ACK, .dlen = 0};
     send_message(conn_d, &re_msg);
     break;
   }
   case CLIENT_HELLO: {
+    uint8_t byte = 1;
+    qput(&node->inbox, msg);
+    if (write(node->event[1], &byte, 1) < 0) {
+      perror("failed to write wake up");
+      return;
+    }
     fline_t *lines = read_file(node->file.path);
     fdiff_t diff = {.plen = strlen(node->file.path),
                     .path = node->file.path,
@@ -367,6 +375,7 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
         .dlen = 1,
         .diff = (fdiff_t[]){diff},
     };
+    // message_t re_msg = {.kind = MSG_ACK, .dlen = 0};
     send_message(conn_d, &re_msg);
     break;
   }

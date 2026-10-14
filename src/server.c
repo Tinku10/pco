@@ -2,6 +2,7 @@
 #include "log.h"
 #include "queue.h"
 #include <errno.h>
+#include <string.h>
 
 typedef struct {
 
@@ -66,14 +67,14 @@ void *accept_connections(void *ts) {
     dbg_print("new client incoming\n");
 
     // add the client address to the list of known clients
-    s->other_connected_sockets[s->other_cnt++] = conn_d;
+    s->connected_sockets[s->connections++] = conn_d;
 
     dbg_print("client connection established on socket %d\n", conn_d);
 
     // TODO: needs to be non-blocking
     receive_messages(conn_d, s);
 
-    s->other_cnt--;
+    s->connections--;
   }
 
   qfree(&s->inbox);
@@ -84,8 +85,9 @@ void *accept_connections(void *ts) {
 
 int server_start(node_t *node, int port, char *file) {
   // node setup
-  node->other_cnt = 0;
-  node->file.path = file;
+  node->connections = 0;
+  node->file.path = strdup(file);
+  node->kind = NODE_ADMIN;
   // set up the pipe
   if (pipe(node->event) == -1) {
     perror("failed to set up pipe");
