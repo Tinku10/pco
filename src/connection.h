@@ -20,6 +20,9 @@ typedef enum {
   CLIENT_DISCONNECT,
   MSG_CONTENT,
   SERVER_HELLO,
+  DOCUMENT_CREATE,
+  DOCUMENT_DELETE,
+  DOCUMENT_UPDATE
 } message_kind;
 
 typedef enum {
@@ -33,10 +36,20 @@ typedef struct {
   char *path;
 } file_t;
 
+// indexes are 0 based.
+// Normalise it if text editor's default is 1 based
+typedef struct {
+  uint32_t start_pos;
+  uint32_t start_char;
+  uint32_t end_pos;
+  uint32_t end_char;
+} range_t;
+
 typedef struct {
   diff_kind kind;
   uint32_t num;
   uint32_t len;
+  range_t range;
   char *body;
 } fline_t;
 
@@ -98,6 +111,16 @@ int client_listen(node_t*, char* ip, int port);
 // serialization
 char *package_message(message_t *);
 message_t *unpackage_message(char *);
+
+int package_range_t(range_t *, char *);
+int unpackage_range_t(range_t *, char *);
+
+int package_fline_t(fline_t *, char *);
+int unpackage_fline_t(fline_t *, char *);
+
+int package_fdiff_t(fdiff_t *, char *);
+int unpackage_fdiff_t(fdiff_t *, char *);
+
 
 // message fetch
 int recv_header(int);

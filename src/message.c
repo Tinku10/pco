@@ -8,33 +8,162 @@
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {
-  case MSG_CONTENT:
-    return "MSG_CONTENT";
-  case MSG_ACK:
-    return "MSG_ACK";
-  case CLIENT_HELLO:
-    return "CLIENT_HELLO";
-  case SERVER_HELLO:
-    return "SERVER_HELLO";
-  default:
-    return "UNKNOWN";
+    case MSG_CONTENT:
+      return "MSG_CONTENT";
+    case MSG_ACK:
+      return "MSG_ACK";
+    case CLIENT_HELLO:
+      return "CLIENT_HELLO";
+    case SERVER_HELLO:
+      return "SERVER_HELLO";
+    case DOCUMENT_CREATE:
+      return "DOCUMENT_CREATE";
+    case DOCUMENT_DELETE:
+      return "DOCUMENT_DELETE";
+    case DOCUMENT_UPDATE:
+      return "DOCUMENT_UPDATE";
+    default:
+      return "UNKNOWN";
   }
 }
 
 const char *diff_kind_str(diff_kind kind) {
   switch (kind) {
-  case DIFF_ADDED:
-    return "DIFF_ADDED";
-  case DIFF_DELETED:
-    return "DIFF_DELETED";
-  case DIFF_MODIFIED:
-    return "DIFF_MODIFIED";
-  default:
-    return "UNKNOWN";
+    case DIFF_ADDED:
+      return "DIFF_ADDED";
+    case DIFF_DELETED:
+      return "DIFF_DELETED";
+    case DIFF_MODIFIED:
+      return "DIFF_MODIFIED";
+    default:
+      return "UNKNOWN";
   }
 }
 
-// simple serialization of the message
+// serde for range_t
+int package_range_t(range_t *range, char *buf) {
+  uint32_t start_pos = htonl(range->start_pos);
+  uint32_t start_char = htonl(range->start_char);
+  uint32_t end_pos = htonl(range->end_pos);
+  uint32_t end_char = htonl(range->end_char);
+
+  uint32_t offset = 0;
+  memcpy(buf + offset, &start_pos, 4);
+  offset += 4;
+  memcpy(buf + offset, &start_char, 4);
+  offset += 4;
+  memcpy(buf + offset, &end_pos, 4);
+  offset += 4;
+  memcpy(buf + offset, &end_char, 4);
+  offset += 4;
+  return offset;
+}
+
+int unpackage_range_t(range_t *range, char *buf) {
+  uint32_t offset = 0;
+  memcpy(&range->start_pos, buf + offset, 4);
+  offset += 4;
+  memcpy(&range->start_char, buf + offset, 4);
+  offset += 4;
+  memcpy(&range->end_pos, buf + offset, 4);
+  offset += 4;
+  memcpy(&range->end_char, buf + offset, 4);
+  offset += 4;
+
+  range->start_pos = ntohl(range->start_pos);
+  range->start_char = ntohl(range->start_char);
+  range->end_pos = ntohl(range->end_pos);
+  range->end_char = ntohl(range->end_char);
+  return offset;
+}
+
+// serde for fline_t
+int package_fline_t(fline_t *line, char *buf) {
+  uint32_t offset = 0;
+  uint32_t kind = htonl(line->kind);
+  uint32_t len = htonl(line->len);
+
+  memcpy(buf + offset, &kind, 4);
+  offset += 4;
+  package_range_t(&line->range, buf + offset);
+  offset += sizeof(range_t);
+  memcpy(buf + offset, &len, 4);
+  offset += 4;
+  memcpy(buf + offset, &line->body, line->len);
+  offset += line->len;
+
+  return offset;
+}
+
+int unpackage_fline_t(fline_t *line, char *buf) {
+  uint32_t offset = 0;
+  memcpy(&line->kind, buf + offset, 4);
+  line->kind = ntohl(line->kind);
+  offset += 4;
+  
+  unpackage_range_t(&line->range, buf + offset);
+  offset += sizeof(range_t);
+  
+  memcpy(&line->len, buf + offset, 4);
+  line->len = ntohl(line->len);
+  offset += 4;
+  
+  line->body = (char *)malloc(line->len);
+  memcpy(&line->body, buf + offset, line->len);
+  offset += line->len;
+
+  return offset;
+}
+
+// serde for diff_t
+int package_fdiff_t(fdiff_t *diff, char *buf) {
+  uint32_t offset = 0;
+  int32_t plen = htonl(diff->plen);
+  int32_t cursor = htonl(diff->cursor_r);
+  int32_t llen = htonl(diff->llen);
+
+  memcpy(buf + offset, &plen, 4);
+  offset += 4;
+  memcpy(buf + offset, &diff->path, diff->plen);
+  offset += diff->plen;
+  memcpy(buf + offset, &cursor, 4);
+  offset += 4;
+  memcpy(buf + offset, &llen, 4);
+  offset += 4;
+  for (int i = 0; i < diff->llen; i++) {
+    offset += package_fline_t(diff->lines + i, buf + offset);
+  }
+
+  return offset;
+}
+
+int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
+  uint32_t offset = 0;
+  memcpy(&diff->plen, buf + offset, 4);
+  diff->plen = ntohl(diff->plen);
+  offset += 4;
+
+  diff->path = (char *)malloc(diff->plen);
+  memcpy(&diff->path, buf + offset, diff->plen);
+  offset += diff->plen;
+
+  memcpy(&diff->cursor_r, buf + offset, 4);
+  diff->cursor_r = ntohl(diff->cursor_r);
+  offset += 4;
+
+  memcpy(&diff->llen, buf + offset, 4);
+  diff->llen = ntohl(diff->llen);
+  offset += 4;
+
+  diff->lines = (fline_t *)malloc(sizeof(fline_t) * diff->llen);
+  for (int i = 0; i < diff->llen; i++) {
+    offset += unpackage_fline_t(diff->lines + i, buf + offset);
+  }
+
+  return offset;
+}
+
+// structure of a message_t
 // | header: 4 bytes |
 // |=================|
 // | kind:   4 bytes |
@@ -47,7 +176,11 @@ const char *diff_kind_str(diff_kind kind) {
 //                | lines:
 //                        | line (0)
 //                                | kind:   4 bytes |
-//                                | num:    4 bytes |
+//                                | range: 16 bytes |
+//                                        | start_pos:  4 bytes|
+//                                        | start_char: 4 bytes|
+//                                        | end_pos:    4 bytes|
+//                                        | end_char:   4 bytes|
 //                                | len:    4 bytes |
 //                                | body: len bytes |
 //                        | line (1) ...    |
@@ -57,7 +190,7 @@ const char *diff_kind_str(diff_kind kind) {
 //        | diff (2) ...    |
 //        ...
 //        | diff (dlen) ... |
-// a header of 4 bytes will be added to help `recv()` know how much to read
+
 char *package_message(message_t *msg) {
   dbg_print("packing message\n");
 
@@ -66,7 +199,7 @@ char *package_message(message_t *msg) {
   for (size_t i = 0; i < msg->dlen; i++) {
     total_bytes += 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len;
+      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len + sizeof(range_t);
     }
   }
   char *buf = (char *)malloc(MSG_HEADER_BYTES + total_bytes);
@@ -88,65 +221,15 @@ char *package_message(message_t *msg) {
 
   // serialize fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
-    uint32_t plen = htonl(msg->diff[i].plen);
-    uint32_t llen = htonl(msg->diff[i].llen);
-
-    memcpy(buf + shift, &plen, 4);
-    shift += 4;
-    memcpy(buf + shift, msg->diff[i].path, msg->diff[i].plen);
-    shift += msg->diff[i].plen;
-    memcpy(buf + shift, &llen, 4);
-    shift += 4;
-
-    // serialize fline_t
-    for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      uint32_t dkind = htonl(msg->diff[i].lines[i].kind);
-      uint32_t num = htonl(msg->diff[i].lines[j].num);
-      uint32_t len = htonl(msg->diff[i].lines[j].len);
-
-      memcpy(buf + shift, &dkind, 4);
-      shift += 4;
-      memcpy(buf + shift, &num, 4);
-      shift += 4;
-      memcpy(buf + shift, &len, 4);
-      shift += 4;
-      memcpy(buf + shift, msg->diff[i].lines[j].body,
-             msg->diff[i].lines[j].len);
-      shift += msg->diff[i].lines[j].len;
-    }
+    shift += package_fdiff_t(msg->diff, buf + shift);
   }
 
-  // printf("Received message: kind=%d diff_len=%zu body=%s\n", msg->kind,
-  // msg->blen, msg->body); printf("Packaged message: "); for (size_t i = 0; i <
-  // total_bytes; i++) {
-  //   printf("%02x ", (unsigned char)buf[i]);
-  // }
   dbg_print("packing complete\n");
 
   return buf;
 }
 
-// message should not have the header (initial 4 bytes)
-// | kind:   4 bytes |
-// | dlen:   4 bytes |
-// | diff:
-//        | diff (1)
-//                | plen:     4 bytes |
-//                | path:  plen bytes |
-//                | llen:     4 bytes |
-//                | lines:
-//                        | line (0)
-//                                | kind:   4 bytes |
-//                                | num:    4 bytes |
-//                                | len:    4 bytes |
-//                                | body: len bytes |
-//                        | line (1) ...    |
-//                        ...
-//                        | line (llen) ... |
-//                | cursor_r: 4 bytes |
-//        | diff (2) ...    |
-//        ...
-//        | diff (dlen) ... |
+// call this method skipping the first 4 bytes of the Header
 message_t *unpackage_message(char *buf) {
   dbg_print("unpacking message\n");
 
@@ -168,52 +251,7 @@ message_t *unpackage_message(char *buf) {
 
   // deserialize to fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
-    uint32_t plen;
-    uint32_t llen;
-
-    memcpy(&plen, buf + shift, 4);
-    msg->diff[i].plen = ntohl(plen);
-    shift += 4;
-
-    msg->diff[i].path = (char *)malloc(msg->diff[i].plen + 1);
-    memcpy(msg->diff[i].path, buf + shift, msg->diff[i].plen);
-    msg->diff[i].path[msg->diff[i].plen] = '\0';
-    shift += msg->diff[i].plen;
-
-    memcpy(&llen, buf + shift, 4);
-    msg->diff[i].llen = ntohl(llen);
-    shift += 4;
-
-    msg->diff[i].lines = (fline_t *)malloc(msg->diff[i].llen * sizeof(fline_t));
-
-    for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      uint32_t num;
-      uint32_t len;
-      diff_kind dkind;
-
-      memcpy(&dkind, buf + shift, 4);
-      msg->diff[i].lines[j].kind = ntohl(dkind);
-      shift += 4;
-
-      memcpy(&num, buf + shift, 4);
-      msg->diff[i].lines[j].num = ntohl(num);
-      shift += 4;
-
-      memcpy(&len, buf + shift, 4);
-      msg->diff[i].lines[j].len = ntohl(len);
-      shift += 4;
-
-      msg->diff[i].lines[j].body =
-          (char *)malloc(msg->diff[i].lines[j].len + 1);
-      memcpy(msg->diff[i].lines[j].body, buf + shift,
-             msg->diff[i].lines[j].len);
-      msg->diff[i].lines[j].body[msg->diff[i].lines[j].len] = '\0';
-      shift += msg->diff[i].lines[j].len;
-
-      dbg_print("diff=%zu line=%d body=%s path=%s\n", i,
-                msg->diff[i].lines[j].num, msg->diff[i].lines[j].body,
-                msg->diff[i].path);
-    }
+    shift += unpackage_fdiff_t(msg->diff, buf + shift);
   }
 
   return msg;
