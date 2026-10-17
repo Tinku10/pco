@@ -29,7 +29,7 @@ fline_t* read_file(char* path) {
     }
     char *dline = (char*)malloc(read + 1); 
     strcpy(dline, line);
-    fline_t curr_line = { .len = read, .num = lnum++, .body = dline, .kind = DIFF_ADDED};
+    fline_t curr_line = { .len = read, .num = lnum++, .body = dline};
     arrput(lines, curr_line);
   }
 

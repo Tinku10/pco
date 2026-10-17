@@ -80,6 +80,9 @@ int lua_get_message(lua_State *L) {
   for (size_t i = 0; i < msg->dlen; i++) {
     lua_newtable(L);
 
+    lua_pushstring(L, diff_kind_str(msg->diff[i].kind));
+    lua_setfield(L, -2, "kind");
+
     if (msg->diff[i].path) {
       lua_pushlstring(L, msg->diff[i].path, msg->diff[i].plen);
       lua_setfield(L, -2, "path");
@@ -92,9 +95,6 @@ int lua_get_message(lua_State *L) {
 
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
       lua_newtable(L);
-
-      lua_pushstring(L, diff_kind_str(msg->diff[i].lines[j].kind));
-      lua_setfield(L, -2, "kind");
 
       lua_pushinteger(L, msg->diff[i].lines[j].num);
       lua_setfield(L, -2, "num");
@@ -141,11 +141,11 @@ int lua_send_message(lua_State *L) {
   char *curr_state = luaL_checkstring(L, 4);
   dbg_print("diff calculation begins");
 
-  fdiff_t *diff = get_buffer_diff(path, prev_state, curr_state);
-  message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = diff};
+  // fdiff_t *diff = get_buffer_diff(path, prev_state, curr_state);
+  // message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = diff};
   dbg_print("diff calculation ends");
 
-  send_message(node->connected_sockets[0], &msg);
+  // send_message(node->connected_sockets[0], &msg);
   dbg_print("message sent");
 
   return 0;
@@ -166,7 +166,7 @@ int lua_server_start(lua_State *L) {
 }
 
 static const struct luaL_Reg lib[] = {
-    {"client_connect", lua_client_connect},
+    // {"client_connect", lua_client_connect},
     {"client_listen", lua_client_listen},
     {"client_hello", lua_client_hello},
     {"get_message", lua_get_message},

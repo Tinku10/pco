@@ -80,13 +80,13 @@ int unpackage_range_t(range_t *range, char *buf) {
 // serde for fline_t
 int package_fline_t(fline_t *line, char *buf) {
   uint32_t offset = 0;
-  uint32_t kind = htonl(line->kind);
+  // uint32_t kind = htonl(line->kind);
   uint32_t len = htonl(line->len);
 
-  memcpy(buf + offset, &kind, 4);
-  offset += 4;
-  package_range_t(&line->range, buf + offset);
-  offset += sizeof(range_t);
+  // memcpy(buf + offset, &kind, 4);
+  // offset += 4;
+  // package_range_t(&line->range, buf + offset);
+  // offset += sizeof(range_t);
   memcpy(buf + offset, &len, 4);
   offset += 4;
   memcpy(buf + offset, &line->body, line->len);
@@ -97,12 +97,12 @@ int package_fline_t(fline_t *line, char *buf) {
 
 int unpackage_fline_t(fline_t *line, char *buf) {
   uint32_t offset = 0;
-  memcpy(&line->kind, buf + offset, 4);
-  line->kind = ntohl(line->kind);
-  offset += 4;
+  // memcpy(&line->kind, buf + offset, 4);
+  // line->kind = ntohl(line->kind);
+  // offset += 4;
   
-  unpackage_range_t(&line->range, buf + offset);
-  offset += sizeof(range_t);
+  // unpackage_range_t(&line->range, buf + offset);
+  // offset += sizeof(range_t);
   
   memcpy(&line->len, buf + offset, 4);
   line->len = ntohl(line->len);
@@ -121,7 +121,10 @@ int package_fdiff_t(fdiff_t *diff, char *buf) {
   int32_t plen = htonl(diff->plen);
   int32_t cursor = htonl(diff->cursor_r);
   int32_t llen = htonl(diff->llen);
+  uint32_t kind = htonl(diff->kind);
 
+  memcpy(buf + offset, &kind, 4);
+  offset += 4;
   memcpy(buf + offset, &plen, 4);
   offset += 4;
   memcpy(buf + offset, &diff->path, diff->plen);
@@ -133,12 +136,19 @@ int package_fdiff_t(fdiff_t *diff, char *buf) {
   for (int i = 0; i < diff->llen; i++) {
     offset += package_fline_t(diff->lines + i, buf + offset);
   }
+  package_range_t(&diff->range, buf + offset);
+  offset += sizeof(range_t);
 
   return offset;
 }
 
 int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   uint32_t offset = 0;
+
+  memcpy(&diff->kind, buf + offset, 4);
+  diff->kind = ntohl(diff->kind);
+  offset += 4;
+
   memcpy(&diff->plen, buf + offset, 4);
   diff->plen = ntohl(diff->plen);
   offset += 4;
@@ -159,6 +169,8 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   for (int i = 0; i < diff->llen; i++) {
     offset += unpackage_fline_t(diff->lines + i, buf + offset);
   }
+  unpackage_range_t(&diff->range, buf + offset);
+  offset += sizeof(range_t);
 
   return offset;
 }
