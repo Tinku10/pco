@@ -83,10 +83,10 @@ int package_fline_t(fline_t *line, char *buf) {
   // uint32_t kind = htonl(line->kind);
   uint32_t len = htonl(line->len);
 
-  // memcpy(buf + offset, &kind, 4);
-  // offset += 4;
-  // package_range_t(&line->range, buf + offset);
-  // offset += sizeof(range_t);
+  memcpy(buf + offset, &kind, 4);
+  offset += 4;
+  offset += package_range_t(&line->range, buf + offset);
+  
   memcpy(buf + offset, &len, 4);
   offset += 4;
   memcpy(buf + offset, line->body, line->len);
@@ -101,8 +101,7 @@ int unpackage_fline_t(fline_t *line, char *buf) {
   // line->kind = ntohl(line->kind);
   // offset += 4;
   
-  // unpackage_range_t(&line->range, buf + offset);
-  // offset += sizeof(range_t);
+  offset += unpackage_range_t(&line->range, buf + offset);
   
   memcpy(&line->len, buf + offset, 4);
   line->len = ntohl(line->len);
