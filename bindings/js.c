@@ -101,6 +101,120 @@ static char *get_string_utf8(napi_env env, napi_value value) {
     return buffer;
 }
 
+/**
+ * @brief Extracts named property from a Javascript object.
+ * Returns NULL when it does not exist
+ * 
+ * @param env 
+ * @param obj javascript object
+ * @param name name of the property to be extracted
+ */
+static napi_value get_prop(
+    napi_env env,
+    napi_value obj,
+    const char *name
+) {
+    napi_value value;
+    if (napi_get_named_property(env, obj, name, &value) != napi_ok) {
+        return NULL;
+    }
+    return value;
+}
+
+/**
+ * @brief Extracts a named int32_t type property from a Javascript object.
+ * 
+ * @param env 
+ * @param javascript object
+ * @param name name of the property to be extracted
+ */
+static int get_u32_from_prop(
+    napi_env env,
+    napi_value obj,
+    const char *name
+) {
+    napi_value value = get_prop(env, obj, name);
+    if (!value) return 0;
+
+    double number;
+    if (napi_get_value_double(env, value, &number) != napi_ok ||
+        number < 0 || number > UINT32_MAX ||
+        number != (double)(uint32_t)number) {
+
+        char buffer[50];
+        sprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
+        napi_throw_error(env, NULL, buffer);
+        return NULL;
+    }
+
+    return (uint32_t)number;
+}
+
+/**
+ * @brief Extracts a named string type property from a javascript object.
+ * 
+ * @param env 
+ * @param javascript object
+ * @param name name of the property to be extracted
+ */
+static char *get_string_from_prop(
+    napi_env env,
+    napi_value obj,
+    const char *name
+) {
+    napi_value value = get_prop(env, obj, name);
+    if (!value) {
+        char buffer[50];
+        sprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
+        napi_throw_error(env, NULL, buffer);
+        return NULL;
+    }
+
+    return get_string_utf8(env, value);
+}
+
+static void get_array_from_prop(
+    napi_env env,
+    napi_value obj,
+    const char *name,
+    napi_value* out
+) {
+    napi_value arr = get_prop(env, obj, name);
+    if (!arr) {
+        char buffer[50];
+        sprintf(buffer, sizeof(buffer), "[%s]: failed to extract named property", name);
+        napi_throw_error(env, NULL, buffer);
+        return;
+    }
+
+    bool is_array = false;
+    if (napi_is_array(env, arr, &is_array) != napi_ok || !is_array) {
+        char buffer[100];
+        sprintf(buffer, sizeof(buffer), "[%s]: not an array or there was a failure to check if it's an array", name);
+        napi_throw_error(env, NULL, buffer);
+        return;
+    }
+
+    uint32_t count;
+    if (napi_get_array_length(env, arr, &count) != napi_ok) {
+        char buffer[100];
+        sprintf(buffer, sizeof(buffer), "[%s]: error getting length of array", name);
+        napi_throw_error(env, NULL, buffer);
+        return;
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        napi_value line_obj;
+        if (napi_get_element(env, arr, i, &line_obj) != napi_ok) {
+            char buffer[100];
+            sprintf(buffer, sizeof(buffer), "[%s]: error extracting %d element of array", name, i);
+            napi_throw_error(env, NULL, buffer);
+            return;
+        }
+        out[i] = line_obj;
+    }
+}
+
 static napi_value js_client_connect(napi_env env, napi_callback_info info) {
     size_t sz = 2;
     napi_value args[2];
@@ -142,10 +256,10 @@ static napi_value js_client_connect(napi_env env, napi_callback_info info) {
     }
 
     // attach the common methods 
-    handle_func_create(env, result, "get_message", js_get_message);
-    handle_func_create(env, result, "send_message", js_send_message);
-    handle_func_create(env, result, "get_pipe_fd", js_get_pipe_fd);
-    handle_func_create(env, result, "client_hello", js_client_hello);
+    handle_func_create(env, result, "getMessage", js_get_message);
+    handle_func_create(env, result, "sendMessage", js_send_message);
+    handle_func_create(env, result, "getPipeFd", js_get_pipe_fd);
+    handle_func_create(env, result, "clientHello", js_client_hello);
     
     return result;
 }
@@ -184,6 +298,7 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
         return NULL;
     }
 
+    // TODO: free mem later
     message_t *msg = qpop(&node->inbox);
     if (msg == NULL) {
         dbg_print("no messages found");
@@ -195,61 +310,72 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
     
     napi_value msg_kind;
     napi_create_string_utf8(env, message_kind_str(msg->kind), NAPI_AUTO_LENGTH, &msg_kind);
-    napi_set_named_property(env, result, "message_kind", msg_kind);
-
-    napi_value dlen;
-    napi_create_int64(env, msg->dlen, &dlen);
-    napi_set_named_property(env, result, "dlen", dlen);
+    napi_set_named_property(env, result, "kind", msg_kind);
 
     napi_value arr;
     napi_create_array_with_length(env, msg->dlen, &arr);
-    napi_set_named_property(env, result, "diffs", arr);
+    napi_set_named_property(env, result, "diff", arr);
 
     for (int i = 0; i < msg->dlen; i++) {
         napi_value arr_obj; // javascript object that represents fdiff_t
         napi_create_object(env, &arr_obj);
 
+        napi_value kind;
+        napi_create_string_utf8(env, diff_kind_str((msg->diff + i)->kind), NAPI_AUTO_LENGTH, &kind);
+        napi_set_named_property(env, arr_obj, "kind", kind);
+
         napi_value path;
         napi_create_string_utf8(env, (msg->diff + i)->path, NAPI_AUTO_LENGTH, &path);
         napi_set_named_property(env, arr_obj, "path", path);
-
-        napi_value plen;
-        napi_create_uint32(env, (msg->diff + i)->plen, &plen);
-        napi_set_named_property(env, arr_obj, "plen", dlen);
 
         napi_value cursor;
         napi_create_uint32(env, (msg->diff + i)->cursor_r, &cursor);
         napi_set_named_property(env, arr_obj, "cursor", cursor);
 
-        napi_value llen;
-        napi_create_uint32(env, (msg->diff + i)->llen, &llen);
-        napi_set_named_property(env, arr_obj, "llen", llen);
-
         napi_value arr_lines;
         napi_create_array_with_length(env, (msg->diff + i)->llen, &arr_lines);
         napi_set_named_property(env, arr_obj, "lines", arr_lines);
 
-        for (int j = 0; j < (msg->diff + i)->llen; j++) {
-            napi_value lines; // javascript object that represents fline_t
-            napi_create_object(env, &lines);
+        // range_t
+        {
+            napi_value range_obj; // javascript object that represents range_t
+            napi_create_object(env, &range_obj);
+            
+            napi_value start_pos;
+            napi_create_uint32(env, (msg->diff + i)->range.start_pos, &start_pos);
+            napi_set_named_property(env, range_obj, "start_pos", start_pos);
 
-            napi_value msg_kind;
-            napi_create_string_utf8(env, message_kind_str(((msg->diff + i)->lines + j)->kind), NAPI_AUTO_LENGTH, &msg_kind);
-            napi_set_named_property(env, lines, "message_kind", msg_kind);
+            napi_value start_char;
+            napi_create_uint32(env, (msg->diff + i)->range.start_char, &start_char);
+            napi_set_named_property(env, range_obj, "start_char", start_char);
+
+            napi_value end_pos;
+            napi_create_uint32(env, (msg->diff + i)->range.end_pos, &end_pos);
+            napi_set_named_property(env, range_obj, "end_pos", end_pos);
+
+            napi_value end_char;
+            napi_create_uint32(env, (msg->diff + i)->range.end_char, &end_char);
+            napi_set_named_property(env, range_obj, "end_char", end_char);
+            napi_set_named_property(env, arr_obj, "range", range_obj);
+        }
+
+        for (int j = 0; j < (msg->diff + i)->llen; j++) {
+            napi_value line; // javascript object that represents fline_t
+            napi_create_object(env, &line);
 
             napi_value num;
             napi_create_uint32(env, ((msg->diff + i)->lines + j)->num, &num);
-            napi_set_named_property(env, lines, "num", num);
+            napi_set_named_property(env, line, "num", num);
 
             napi_value len;
             napi_create_uint32(env, ((msg->diff + i)->lines + j)->len, &len);
-            napi_set_named_property(env, lines, "len", len);
+            napi_set_named_property(env, line, "len", len);
 
             napi_value body;
             napi_create_string_utf8(env, ((msg->diff + i)->lines + j)->body, NAPI_AUTO_LENGTH, &body);
-            napi_set_named_property(env, lines, "body", body);
+            napi_set_named_property(env, line, "body", body);
 
-            napi_set_element(env, arr_lines, j, lines);
+            napi_set_element(env, arr_lines, j, line);
         }
         
         napi_set_element(env, arr, i, arr_obj);
@@ -280,8 +406,8 @@ static napi_value js_get_pipe_fd(napi_env env, napi_callback_info info) {
 
 static napi_value js_send_message(napi_env env, napi_callback_info info) {
     napi_value this_ptr; // ref to the method invoker
-    size_t sz = 2;
-    napi_value args[2];
+    size_t sz = 1;
+    napi_value args[1];
     napi_status status = napi_get_cb_info(env, info, &sz, args, &this_ptr, NULL);
     if (status != napi_ok) {
         napi_throw_error(env, NULL, "Failed to retrieve callback info");
@@ -295,16 +421,64 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
         return NULL;
     }
 
-    char *prev_state, *current_state;
-    prev_state = get_string_utf8(env, args[0]);
-    current_state = get_string_utf8(env, args[1]);
+    message_t msg = {0};
+    char *msg_kind_str = get_string_from_prop(env, args[0], "kind");
+    msg.kind = message_kind_str_to_enum(msg_kind_str);
+    free(msg_kind_str);
+    msg.dlen = get_u32_from_prop(env, args[0], "dlen");
+    
+    // diff array
+    msg.diff = (fdiff_t *)malloc(sizeof(fdiff_t) * msg.dlen);
+    napi_value *diff_js_arr = (napi_value *)malloc(sizeof(napi_value) * msg.dlen);
+    get_array_from_prop(env, args[0], "diff", diff_js_arr); // each element of this is a line_t
 
-    fdiff_t *diff = get_buffer_diff(prev_state, current_state);
-    message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = diff};
+    for (uint32_t i = 0; i < msg.dlen; i++) {
+        fdiff_t diff = {0};
+        char *diff_kind_str = get_string_from_prop(env, diff_js_arr[i], "kind");
+        diff.kind = diff_kind_str_to_enum(diff_kind_str);
+        free(diff_kind_str);
+
+        diff.cursor_r = get_u32_from_prop(env, diff_js_arr[i], "cursor_position");
+        diff.path = get_string_from_prop(env, diff_js_arr[i], "path");
+        diff.plen = get_u32_from_prop(env, diff_js_arr[i], "plen");
+        diff.llen = get_u32_from_prop(env, diff_js_arr[i], "llen");
+        
+        // lines
+        diff.lines = (fline_t *)malloc(sizeof(fline_t) * diff.llen);
+        napi_value *lines = (napi_value *)malloc(sizeof(napi_value) * diff.llen);
+        get_array_from_prop(env, diff_js_arr[i], "lines", lines);
+        for (uint32_t j = 0; j < diff.llen; j++) {
+            fline_t line = {0};
+            line.len = get_u32_from_prop(env, lines[j], "len");
+            line.body = get_string_from_prop(env, lines[j], "body");
+            diff.lines[0] = line;
+        }
+        free(lines);
+
+        // range
+        napi_value range = get_prop(env, diff_js_arr[i], "range");
+        range_t range_value;
+        range_value.start_pos = get_u32_from_prop(env, range, "start_pos");
+        range_value.start_char = get_u32_from_prop(env, range, "start_char");
+        range_value.end_pos = get_u32_from_prop(env, range, "end_pos");
+        range_value.end_char = get_u32_from_prop(env, range, "end_char");
+        diff.range = range_value;
+
+        msg.diff[i] = diff;
+    }
+    free(diff_js_arr);
 
     send_message(node->socket_d, &msg);
-    free(prev_state);
-    free(current_state);
+    
+    // free allocated mem
+    for (uint32_t i = 0; i < msg.dlen; i++) {        
+        free(msg.diff[i].path);
+        for (uint32_t j = 0; j < msg.diff[i].llen; j++) {
+            free(msg.diff[i].lines->body);
+        }
+    }
+    free(msg.diff);
+    
     return NULL;
 }
 
@@ -354,16 +528,16 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
     }
 
     // attach the common methods 
-    handle_func_create(env, result, "get_message", js_get_message);
-    handle_func_create(env, result, "send_message", js_send_message);
-    handle_func_create(env, result, "get_pipe_fd", js_get_pipe_fd);
+    handle_func_create(env, result, "getMessage", js_get_message);
+    handle_func_create(env, result, "sendMessage", js_send_message);
+    handle_func_create(env, result, "getPipeFd", js_get_pipe_fd);
     
     return result;
 }
 
 static napi_value Init(napi_env env, napi_value exports) {
-    handle_func_create(env, exports, "server_start", js_server_start);
-    handle_func_create(env, exports, "client_connect", js_client_connect);
+    handle_func_create(env, exports, "serverStart", js_server_start);
+    handle_func_create(env, exports, "clientConnect", js_client_connect);
     return exports;
 }
 
