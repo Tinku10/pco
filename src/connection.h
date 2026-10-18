@@ -22,7 +22,8 @@ typedef enum {
   SERVER_HELLO,
   DOCUMENT_CREATE,
   DOCUMENT_DELETE,
-  DOCUMENT_UPDATE
+  DOCUMENT_UPDATE,
+  UNKNOWN
 } message_kind;
 
 typedef enum {
@@ -103,6 +104,8 @@ typedef struct node {
 
 const char *message_kind_str(message_kind);
 const char *diff_kind_str(diff_kind);
+message_kind message_kind_str_to_enum(const char *);
+diff_kind diff_kind_str_to_enum(const char *);
 
 int server_start(node_t *, int port, char *);
 int client_connect(char *ip, int port);

@@ -27,6 +27,29 @@ const char *message_kind_str(message_kind kind) {
   }
 }
 
+message_kind message_kind_str_to_enum(const char *kind) {
+    if (kind == NULL) {
+        return UNKNOWN;
+    }
+
+    if (strcmp(kind, "MSG_CONTENT") == 0)
+        return MSG_CONTENT;
+    if (strcmp(kind, "MSG_ACK") == 0)
+        return MSG_ACK;
+    if (strcmp(kind, "CLIENT_HELLO") == 0)
+        return CLIENT_HELLO;
+    if (strcmp(kind, "SERVER_HELLO") == 0)
+        return SERVER_HELLO;
+    if (strcmp(kind, "DOCUMENT_CREATE") == 0)
+        return DOCUMENT_CREATE;
+    if (strcmp(kind, "DOCUMENT_DELETE") == 0)
+        return DOCUMENT_DELETE;
+    if (strcmp(kind, "DOCUMENT_UPDATE") == 0)
+        return DOCUMENT_UPDATE;
+
+    return UNKNOWN;
+}
+
 const char *diff_kind_str(diff_kind kind) {
   switch (kind) {
     case DIFF_ADDED:
@@ -38,6 +61,21 @@ const char *diff_kind_str(diff_kind kind) {
     default:
       return "UNKNOWN";
   }
+}
+
+diff_kind diff_kind_str_to_enum(const char *kind) {
+    if (kind == NULL) {
+        return UNKNOWN;
+    }
+
+    if (strcmp(kind, "DIFF_ADDED") == 0)
+        return DIFF_ADDED;
+    if (strcmp(kind, "DIFF_DELETED") == 0)
+        return DIFF_DELETED;
+    if (strcmp(kind, "DIFF_MODIFIED") == 0)
+        return DIFF_MODIFIED;
+
+    return UNKNOWN;
 }
 
 // serde for range_t
@@ -83,9 +121,9 @@ int package_fline_t(fline_t *line, char *buf) {
   // uint32_t kind = htonl(line->kind);
   uint32_t len = htonl(line->len);
 
-  memcpy(buf + offset, &kind, 4);
-  offset += 4;
-  offset += package_range_t(&line->range, buf + offset);
+  // memcpy(buf + offset, &kind, 4);
+  // offset += 4;
+  // offset += package_range_t(&line->range, buf + offset);
   
   memcpy(buf + offset, &len, 4);
   offset += 4;
@@ -101,7 +139,7 @@ int unpackage_fline_t(fline_t *line, char *buf) {
   // line->kind = ntohl(line->kind);
   // offset += 4;
   
-  offset += unpackage_range_t(&line->range, buf + offset);
+  // offset += unpackage_range_t(&line->range, buf + offset);
   
   memcpy(&line->len, buf + offset, 4);
   line->len = ntohl(line->len);
