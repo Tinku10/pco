@@ -89,7 +89,7 @@ int package_fline_t(fline_t *line, char *buf) {
   // offset += sizeof(range_t);
   memcpy(buf + offset, &len, 4);
   offset += 4;
-  memcpy(buf + offset, &line->body, line->len);
+  memcpy(buf + offset, line->body, line->len);
   offset += line->len;
 
   return offset;
@@ -109,7 +109,7 @@ int unpackage_fline_t(fline_t *line, char *buf) {
   offset += 4;
   
   line->body = (char *)malloc(line->len);
-  memcpy(&line->body, buf + offset, line->len);
+  memcpy(line->body, buf + offset, line->len);
   offset += line->len;
 
   return offset;
@@ -127,7 +127,7 @@ int package_fdiff_t(fdiff_t *diff, char *buf) {
   offset += 4;
   memcpy(buf + offset, &plen, 4);
   offset += 4;
-  memcpy(buf + offset, &diff->path, diff->plen);
+  memcpy(buf + offset, diff->path, diff->plen);
   offset += diff->plen;
   memcpy(buf + offset, &cursor, 4);
   offset += 4;
@@ -154,7 +154,7 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   offset += 4;
 
   diff->path = (char *)malloc(diff->plen);
-  memcpy(&diff->path, buf + offset, diff->plen);
+  memcpy(diff->path, buf + offset, diff->plen);
   offset += diff->plen;
 
   memcpy(&diff->cursor_r, buf + offset, 4);
@@ -261,6 +261,8 @@ message_t *unpackage_message(char *buf) {
 
   int shift = 8;
 
+  dbg_print("about to unpack diff");
+
   // deserialize to fdiff_t
   for (size_t i = 0; i < msg->dlen; i++) {
     shift += unpackage_fdiff_t(msg->diff, buf + shift);
@@ -356,7 +358,7 @@ int send_message(int conn_d, message_t *msg) {
   for (size_t i = 0; i < msg->dlen; i++) {
     total_bytes += 4 + msg->diff[i].plen + 4;
     for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len;
+      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len + sizeof(range_t);
     }
   }
 
@@ -416,10 +418,14 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
       return;
     }
     fline_t *lines = read_file(node->file.path);
-    fdiff_t diff = {.plen = strlen(node->file.path),
+    range_t range = {.start_pos = 0, .start_char = 0, .end_pos = 0, .end_char = 0};
+    fdiff_t diff = {.kind = DIFF_ADDED,
+                    .plen = strlen(node->file.path),
                     .path = node->file.path,
                     .llen = arrlen(lines),
-                    .lines = lines};
+                    .lines = lines,
+                    .range = range}
+    ;
     message_t re_msg = {
         .kind = SERVER_HELLO,
         .dlen = 1,
