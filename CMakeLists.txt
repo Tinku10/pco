@@ -72,9 +72,9 @@ target_include_directories(pcojs PRIVATE
   ${CMAKE_SOURCE_DIR}/src
   ${NODE_API_INCLUDE_DIR}
 )
-target_compile_options(pcojs PRIVATE -Wall -Wextra -g -O0 -fsanitize=address)
+target_compile_options(pcojs PRIVATE -Wall -Wextra -g -O0)
 # Missing symbols are loaded by Node JS runtime
-target_link_options(pcojs PRIVATE -Wall -Wextra -g -O0 -undefined dynamic_lookup -fsanitize=address)
+target_link_options(pcojs PRIVATE -Wall -Wextra -g -O0 -undefined dynamic_lookup)
 # Node js expects .node extension in shared objects
 set_target_properties(pcojs PROPERTIES
   PREFIX "lib"

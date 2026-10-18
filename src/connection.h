@@ -47,15 +47,14 @@ typedef struct {
 } range_t;
 
 typedef struct {
-  // diff_kind kind;
+  diff_kind kind;
   uint32_t num;
   uint32_t len;
-  // range_t range;
+  range_t range;
   char *body;
 } fline_t;
 
 typedef struct {
-  diff_kind kind;
   // file path
   char *path;
   uint32_t plen;
@@ -65,7 +64,6 @@ typedef struct {
   // char *body;
   uint32_t llen;
   fline_t *lines;
-  range_t range;
 } fdiff_t;
 
 typedef enum {

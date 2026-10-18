@@ -118,12 +118,12 @@ int unpackage_range_t(range_t *range, char *buf) {
 // serde for fline_t
 int package_fline_t(fline_t *line, char *buf) {
   uint32_t offset = 0;
-  // uint32_t kind = htonl(line->kind);
+  uint32_t kind = htonl(line->kind);
   uint32_t len = htonl(line->len);
 
-  // memcpy(buf + offset, &kind, 4);
-  // offset += 4;
-  // offset += package_range_t(&line->range, buf + offset);
+  memcpy(buf + offset, &kind, 4);
+  offset += 4;
+  offset += package_range_t(&line->range, buf + offset);
   
   memcpy(buf + offset, &len, 4);
   offset += 4;
@@ -135,11 +135,11 @@ int package_fline_t(fline_t *line, char *buf) {
 
 int unpackage_fline_t(fline_t *line, char *buf) {
   uint32_t offset = 0;
-  // memcpy(&line->kind, buf + offset, 4);
-  // line->kind = ntohl(line->kind);
-  // offset += 4;
+  memcpy(&line->kind, buf + offset, 4);
+  line->kind = ntohl(line->kind);
+  offset += 4;
   
-  // offset += unpackage_range_t(&line->range, buf + offset);
+  offset += unpackage_range_t(&line->range, buf + offset);
   
   memcpy(&line->len, buf + offset, 4);
   line->len = ntohl(line->len);
@@ -159,10 +159,7 @@ int package_fdiff_t(fdiff_t *diff, char *buf) {
   int32_t plen = htonl(diff->plen);
   int32_t cursor = htonl(diff->cursor_r);
   int32_t llen = htonl(diff->llen);
-  uint32_t kind = htonl(diff->kind);
 
-  memcpy(buf + offset, &kind, 4);
-  offset += 4;
   memcpy(buf + offset, &plen, 4);
   offset += 4;
   memcpy(buf + offset, diff->path, diff->plen);
@@ -174,18 +171,12 @@ int package_fdiff_t(fdiff_t *diff, char *buf) {
   for (int i = 0; i < diff->llen; i++) {
     offset += package_fline_t(diff->lines + i, buf + offset);
   }
-  package_range_t(&diff->range, buf + offset);
-  offset += sizeof(range_t);
 
   return offset;
 }
 
 int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   uint32_t offset = 0;
-
-  memcpy(&diff->kind, buf + offset, 4);
-  diff->kind = ntohl(diff->kind);
-  offset += 4;
 
   memcpy(&diff->plen, buf + offset, 4);
   diff->plen = ntohl(diff->plen);
@@ -208,8 +199,6 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   for (int i = 0; i < diff->llen; i++) {
     offset += unpackage_fline_t(diff->lines + i, buf + offset);
   }
-  unpackage_range_t(&diff->range, buf + offset);
-  offset += sizeof(range_t);
 
   return offset;
 }
@@ -457,13 +446,10 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
       return;
     }
     fline_t *lines = read_file(node->file.path);
-    range_t range = {.start_pos = 0, .start_char = 0, .end_pos = 0, .end_char = 0};
-    fdiff_t diff = {.kind = DIFF_ADDED,
-                    .plen = strlen(node->file.path),
+    fdiff_t diff = {.plen = strlen(node->file.path),
                     .path = node->file.path,
                     .llen = arrlen(lines),
-                    .lines = lines,
-                    .range = range}
+                    .lines = lines}
     ;
     message_t re_msg = {
         .kind = SERVER_HELLO,

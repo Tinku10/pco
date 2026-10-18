@@ -57,7 +57,7 @@ int handle_func_create(napi_env env, napi_value js_object, char* func_id, napi_c
 
     if (status != napi_ok) {
         char buffer[50];
-        sprintf(buffer, "Failed to export %s function", func_id);
+        snprintf(buffer, "Failed to export %s function", func_id);
         napi_throw_error(env, NULL, buffer);
         return -1;
     }
@@ -320,10 +320,6 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
         napi_value arr_obj; // javascript object that represents fdiff_t
         napi_create_object(env, &arr_obj);
 
-        napi_value kind;
-        napi_create_string_utf8(env, diff_kind_str((msg->diff + i)->kind), NAPI_AUTO_LENGTH, &kind);
-        napi_set_named_property(env, arr_obj, "kind", kind);
-
         napi_value path;
         napi_create_string_utf8(env, (msg->diff + i)->path, NAPI_AUTO_LENGTH, &path);
         napi_set_named_property(env, arr_obj, "path", path);
@@ -336,45 +332,51 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
         napi_create_array_with_length(env, (msg->diff + i)->llen, &arr_lines);
         napi_set_named_property(env, arr_obj, "lines", arr_lines);
 
-        // range_t
-        {
-            napi_value range_obj; // javascript object that represents range_t
-            napi_create_object(env, &range_obj);
-            
-            napi_value start_pos;
-            napi_create_uint32(env, (msg->diff + i)->range.start_pos, &start_pos);
-            napi_set_named_property(env, range_obj, "start_pos", start_pos);
-
-            napi_value start_char;
-            napi_create_uint32(env, (msg->diff + i)->range.start_char, &start_char);
-            napi_set_named_property(env, range_obj, "start_char", start_char);
-
-            napi_value end_pos;
-            napi_create_uint32(env, (msg->diff + i)->range.end_pos, &end_pos);
-            napi_set_named_property(env, range_obj, "end_pos", end_pos);
-
-            napi_value end_char;
-            napi_create_uint32(env, (msg->diff + i)->range.end_char, &end_char);
-            napi_set_named_property(env, range_obj, "end_char", end_char);
-            napi_set_named_property(env, arr_obj, "range", range_obj);
-        }
-
         for (int j = 0; j < (msg->diff + i)->llen; j++) {
             napi_value line; // javascript object that represents fline_t
             napi_create_object(env, &line);
 
-            napi_value num;
-            napi_create_uint32(env, ((msg->diff + i)->lines + j)->num, &num);
-            napi_set_named_property(env, line, "num", num);
+            // num
+            // napi_value num;
+            // napi_create_uint32(env, ((msg->diff + i)->lines + j)->num, &num);
+            // napi_set_named_property(env, line, "num", num);
 
+            // kind
+            napi_value kind;
+            napi_create_string_utf8(env, diff_kind_str(((msg->diff + i)->lines + j)->kind), NAPI_AUTO_LENGTH, &kind);
+            napi_set_named_property(env, line, "kind", kind);
+
+            // len
             napi_value len;
             napi_create_uint32(env, ((msg->diff + i)->lines + j)->len, &len);
             napi_set_named_property(env, line, "len", len);
 
+            // body
             napi_value body;
             napi_create_string_utf8(env, ((msg->diff + i)->lines + j)->body, NAPI_AUTO_LENGTH, &body);
             napi_set_named_property(env, line, "body", body);
 
+            // range_t
+            napi_value range_obj; // javascript object that represents range_t
+            napi_create_object(env, &range_obj);
+            
+            napi_value start_pos;
+            napi_create_uint32(env, (msg->diff + i)->lines->range.start_pos, &start_pos);
+            napi_set_named_property(env, range_obj, "start_pos", start_pos);
+
+            napi_value start_char;
+            napi_create_uint32(env, (msg->diff + i)->lines->range.start_char, &start_char);
+            napi_set_named_property(env, range_obj, "start_char", start_char);
+
+            napi_value end_pos;
+            napi_create_uint32(env, (msg->diff + i)->lines->range.end_pos, &end_pos);
+            napi_set_named_property(env, range_obj, "end_pos", end_pos);
+
+            napi_value end_char;
+            napi_create_uint32(env, (msg->diff + i)->lines->range.end_char, &end_char);
+            napi_set_named_property(env, range_obj, "end_char", end_char);
+            napi_set_named_property(env, line, "range", range_obj);
+            
             napi_set_element(env, arr_lines, j, line);
         }
         
@@ -434,10 +436,7 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
 
     for (uint32_t i = 0; i < msg.dlen; i++) {
         fdiff_t diff = {0};
-        char *diff_kind_str = get_string_from_prop(env, diff_js_arr[i], "kind");
-        diff.kind = diff_kind_str_to_enum(diff_kind_str);
-        free(diff_kind_str);
-
+        
         diff.cursor_r = get_u32_from_prop(env, diff_js_arr[i], "cursor_position");
         diff.path = get_string_from_prop(env, diff_js_arr[i], "path");
         diff.plen = get_u32_from_prop(env, diff_js_arr[i], "plen");
@@ -449,20 +448,29 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
         get_array_from_prop(env, diff_js_arr[i], "lines", lines);
         for (uint32_t j = 0; j < diff.llen; j++) {
             fline_t line = {0};
+
+            // kind
+            char *diff_kind_str = get_string_from_prop(env, lines[j], "kind");
+            line.kind = diff_kind_str_to_enum(diff_kind_str);
+            free(diff_kind_str);
+
+            // len
             line.len = get_u32_from_prop(env, lines[j], "len");
+
+            // body
             line.body = get_string_from_prop(env, lines[j], "body");
             diff.lines[0] = line;
+
+            // range
+            napi_value range = get_prop(env, diff_js_arr[i], "range");
+            range_t range_value;
+            range_value.start_pos = get_u32_from_prop(env, range, "start_pos");
+            range_value.start_char = get_u32_from_prop(env, range, "start_char");
+            range_value.end_pos = get_u32_from_prop(env, range, "end_pos");
+            range_value.end_char = get_u32_from_prop(env, range, "end_char");
+            line.range = range_value;
         }
         free(lines);
-
-        // range
-        napi_value range = get_prop(env, diff_js_arr[i], "range");
-        range_t range_value;
-        range_value.start_pos = get_u32_from_prop(env, range, "start_pos");
-        range_value.start_char = get_u32_from_prop(env, range, "start_char");
-        range_value.end_pos = get_u32_from_prop(env, range, "end_pos");
-        range_value.end_char = get_u32_from_prop(env, range, "end_char");
-        diff.range = range_value;
 
         msg.diff[i] = diff;
     }
