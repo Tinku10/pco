@@ -145,8 +145,9 @@ int unpackage_fline_t(fline_t *line, char *buf) {
   line->len = ntohl(line->len);
   offset += 4;
   
-  line->body = (char *)malloc(line->len);
+  line->body = (char *)malloc(line->len + 1);
   memcpy(line->body, buf + offset, line->len);
+  line->body[line->len] = '\0';
   offset += line->len;
 
   return offset;
@@ -190,8 +191,9 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
   diff->plen = ntohl(diff->plen);
   offset += 4;
 
-  diff->path = (char *)malloc(diff->plen);
+  diff->path = (char *)malloc(diff->plen + 1);
   memcpy(diff->path, buf + offset, diff->plen);
+  diff->path[diff->plen] = '\0';
   offset += diff->plen;
 
   memcpy(&diff->cursor_r, buf + offset, 4);
