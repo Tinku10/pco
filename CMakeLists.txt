@@ -43,16 +43,36 @@ find_library(LUAJIT_LIBRARY
     NAMES luajit REQUIRED
 )
 
+set(AUTOMERGE_INSTALL_DIR
+    "${CMAKE_SOURCE_DIR}/libs/automerge/rust/automerge-c/install"
+)
+
+find_path(AUTOMERGE_INCLUDE_DIR
+    NAMES automerge.h
+    PATHS "${AUTOMERGE_INSTALL_DIR}/include"
+    REQUIRED
+)
+
+find_library(AUTOMERGE_LIBRARY
+    NAMES automerge
+    PATHS "${AUTOMERGE_INSTALL_DIR}/lib"
+    REQUIRED
+)
+
 # Create executable and link dependencies
 
 # Grab all .c files
 file(GLOB LIB_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 file(GLOB LIB_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/test/*.c")
 
+list(REMOVE_ITEM LIB_SOURCES 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/diff.c"
+)
+
 add_library(pco SHARED ${LIB_SOURCES} bindings/lua.c)
 add_library(pcojs SHARED ${LIB_SOURCES} bindings/js.c)
 
-target_compile_definitions(pco PRIVATE DEBUG)
+target_compile_definitions(pco PRIVATE)
 
 # Include directories
 target_include_directories(pco PRIVATE 
@@ -60,11 +80,15 @@ target_include_directories(pco PRIVATE
   ${LUAJIT_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src
   ${NODE_API_INCLUDE_DIR}
+  ${AUTOMERGE_INSTALL_DIR}
 )
 
 target_compile_options(pco PRIVATE -Wall -Wextra -g -O0)
 target_link_options(pco PRIVATE -Wall -Wextra -g -O0)
-target_link_libraries(pco PRIVATE ${LUAJIT_LIBRARY})
+target_link_libraries(pco PRIVATE 
+  ${LUAJIT_LIBRARY}     
+  "${AUTOMERGE_LIBRARY}"
+)
 
 target_include_directories(pcojs PRIVATE 
   ${CMAKE_SOURCE_DIR}/libs
