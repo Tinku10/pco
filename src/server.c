@@ -1,4 +1,5 @@
 #include "connection.h"
+#include "fileio.h"
 #include "log.h"
 #include "queue.h"
 #include <errno.h>
@@ -83,11 +84,42 @@ void *accept_connections(void *ts) {
   return NULL;
 }
 
+/**
+ * @brief load the contents of shared directory into a crdt document
+ *
+ * @param node
+ * @return 0 if the operation is successful, -1 otherwise
+ */
+int prepare_server_documents(node_t *node) {
+  char **lines = read_file(node->file.path);
+
+  AMresult *doc_result = NULL;
+  const AMobjId *obj_id =
+      add_list_to_document(node->doc, node->file.path, &doc_result);
+  if (!obj_id)
+    return -1;
+
+  for (int32_t i = 0; i < arrlen(lines); i++) {
+    if (put_element_into_list(node->doc, obj_id, lines[i], i) < 0) {
+      return -1;
+    }
+  }
+  AMresultFree(doc_result);
+  return 0;
+}
+
 int server_start(node_t *node, int port, char *file) {
   // node setup
   node->connections = 0;
   node->file.path = strdup(file);
   node->kind = NODE_ADMIN;
+  AMresult *result = AMcreate(NULL);
+  node->doc = get_document(result);
+  if (prepare_server_documents(node) < 0) {
+    perror("failed to set up a crdt document in the server");
+    return -1;
+  }
+
   // set up the pipe
   if (pipe(node->event) == -1) {
     perror("failed to set up pipe");
