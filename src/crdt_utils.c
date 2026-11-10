@@ -70,6 +70,19 @@ int update_list_element(AMdoc *doc, const AMobjId *obj_id, char *item,
   return 0;
 }
 
+int delete_element_from_list(AMdoc *doc, const AMobjId *obj_id, int32_t position) {
+  AMresult *result = AMlistDelete(doc, obj_id, position);
+
+  if (!result || AMresultStatus(result) != AM_STATUS_OK) {
+    fprintf(stderr, "failed to delete element from the specified position\n");
+    AMresultFree(result);
+    return -1;
+  }
+
+  AMresultFree(result);
+  return 0;
+}
+
 void get_list(AMdoc *doc, const char *filename, char ***str_list) {
   AMbyteSpan key = {.src = (const uint8_t *)filename,
                     .count = strlen(filename)};

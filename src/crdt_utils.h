@@ -8,10 +8,10 @@
  */
 #ifndef CRDT_UTILS_H
 #define CRDT_UTILS_H
+#include <automerge-c/automerge.h>
 #include <stb/stb_ds.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 /**
  * @brief get the AMdoc from result
@@ -62,13 +62,24 @@ int put_element_into_list(AMdoc *doc, const AMobjId *obj_id, char *item,
  * document
  *
  * @param[in] doc the Automerge document
- * @param[in] obj_id pointer to the list object where item is to be inserted
+ * @param[in] obj_id pointer to the list object where item is to be updated
  * @param[in] item a null terminated C-string
  * @param[in] position integer position in the list
  * @return 0 if the operation is successful, -1 otherwise
  */
 int update_list_element(AMdoc *doc, const AMobjId *obj_id, char *item,
                         int32_t position);
+
+/**
+ * @brief deletes an element from a specified position of a list in an Automerge
+ * document
+ *
+ * @param[in] doc the Automerge document
+ * @param[in] obj_id pointer to the list whose element is to be deleted
+ * @param[in] position integer position in the list
+ * @return 0 if the operation is successful, -1 otherwise
+ */
+int delete_element_from_list(AMdoc *doc, const AMobjId *obj_id, int32_t position);
 
 /**
  * @brief get the list against a key from an Automerge document
