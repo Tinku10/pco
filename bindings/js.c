@@ -12,6 +12,7 @@
 #include "diff.h"
 #include "log.h"
 #include "queue.h"
+#include "crdt_utils.h"
 
 static napi_value js_client_hello(napi_env, napi_callback_info);
 static napi_value js_get_pipe_fd(napi_env, napi_callback_info);
@@ -43,7 +44,7 @@ int handle_func_create(napi_env env, napi_value js_object, char* func_id, napi_c
 
     if (status != napi_ok) {
         char buffer[50];
-        sprintf(buffer, "Failed to create %s function", func_id);
+        fprintf("failed to create %s function", func_id);
         napi_throw_error(env, NULL, buffer);
         return -1;
     }
@@ -57,7 +58,7 @@ int handle_func_create(napi_env env, napi_value js_object, char* func_id, napi_c
 
     if (status != napi_ok) {
         char buffer[50];
-        snprintf(buffer, "Failed to export %s function", func_id);
+        snprintf(buffer, "failed to export %s function", func_id);
         napi_throw_error(env, NULL, buffer);
         return -1;
     }
@@ -85,7 +86,7 @@ static char *get_string_utf8(napi_env env, napi_value value) {
 
     char *buffer = malloc(length + 1);
     if (buffer == NULL) {
-        perror("Couldn't allocate sufficient memory in malloc()");
+        perror("couldn't allocate sufficient memory in malloc()");
         return NULL;
     }
 
@@ -142,7 +143,7 @@ static int get_u32_from_prop(
         number != (double)(uint32_t)number) {
 
         char buffer[50];
-        sprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
+        snprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
         napi_throw_error(env, NULL, buffer);
         return NULL;
     }
@@ -165,7 +166,7 @@ static char *get_string_from_prop(
     napi_value value = get_prop(env, obj, name);
     if (!value) {
         char buffer[50];
-        sprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
+        snprintf(buffer, sizeof(buffer), "failed to extract named property %s", name);
         napi_throw_error(env, NULL, buffer);
         return NULL;
     }
@@ -177,12 +178,12 @@ static void get_array_from_prop(
     napi_env env,
     napi_value obj,
     const char *name,
-    napi_value* out
+    napi_value** out
 ) {
     napi_value arr = get_prop(env, obj, name);
     if (!arr) {
         char buffer[50];
-        sprintf(buffer, sizeof(buffer), "[%s]: failed to extract named property", name);
+        snprintf(buffer, sizeof(buffer), "[%s]: failed to extract named property", name);
         napi_throw_error(env, NULL, buffer);
         return;
     }
@@ -190,7 +191,7 @@ static void get_array_from_prop(
     bool is_array = false;
     if (napi_is_array(env, arr, &is_array) != napi_ok || !is_array) {
         char buffer[100];
-        sprintf(buffer, sizeof(buffer), "[%s]: not an array or there was a failure to check if it's an array", name);
+        snprintf(buffer, sizeof(buffer), "[%s]: not an array or there was a failure to check if it's an array", name);
         napi_throw_error(env, NULL, buffer);
         return;
     }
@@ -198,7 +199,7 @@ static void get_array_from_prop(
     uint32_t count;
     if (napi_get_array_length(env, arr, &count) != napi_ok) {
         char buffer[100];
-        sprintf(buffer, sizeof(buffer), "[%s]: error getting length of array", name);
+        snprintf(buffer, sizeof(buffer), "[%s]: error getting length of array", name);
         napi_throw_error(env, NULL, buffer);
         return;
     }
@@ -207,11 +208,11 @@ static void get_array_from_prop(
         napi_value line_obj;
         if (napi_get_element(env, arr, i, &line_obj) != napi_ok) {
             char buffer[100];
-            sprintf(buffer, sizeof(buffer), "[%s]: error extracting %d element of array", name, i);
+            snprintf(buffer, sizeof(buffer), "[%s]: error extracting %d element of array", name, i);
             napi_throw_error(env, NULL, buffer);
             return;
         }
-        out[i] = line_obj;
+        arrput(out, line_obj);
     }
 }
 
@@ -220,7 +221,7 @@ static napi_value js_client_connect(napi_env env, napi_callback_info info) {
     napi_value args[2];
     napi_status status = napi_get_cb_info(env, info, &sz, args, NULL, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to retrieve callback info");
+        napi_throw_error(env, NULL, "failed to retrieve callback info");
         return NULL;
     }
 
@@ -231,7 +232,7 @@ static napi_value js_client_connect(napi_env env, napi_callback_info info) {
     host = get_string_utf8(env, args[0]);
     status = napi_get_value_int32(env, args[1], &port);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to extract port from callback info");
+        napi_throw_error(env, NULL, "failed to extract port from callback info");
         return NULL;
     }
 
@@ -243,14 +244,14 @@ static napi_value js_client_connect(napi_env env, napi_callback_info info) {
     napi_value result;
     status = napi_create_object(env, &result);
     if (status != napi_ok) {
-        perror("Error creating node data structure javascript holder");
+        perror("error creating node data structure javascript holder");
         free(node);
         return NULL;
     }
 
     status = napi_wrap(env, result, node, NULL, NULL, NULL);
     if (status != napi_ok) {
-        perror("Error wrapping native object with javascript");
+        perror("error wrapping native object with javascript");
         free(node);
         return NULL;
     }
@@ -268,14 +269,14 @@ static napi_value js_client_hello(napi_env env, napi_callback_info info) {
     napi_value this_ptr; // ref to the method invoker
     napi_status status = napi_get_cb_info(env, info, NULL, NULL, &this_ptr, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to retrieve callback info");
+        napi_throw_error(env, NULL, "failed to retrieve callback info");
         return NULL;
     }
 
     node_t *node = NULL;
     status = napi_unwrap(env, this_ptr, &node);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to unwarp native object");
+        napi_throw_error(env, NULL, "failed to unwarp native object");
         return NULL;
     }
 
@@ -287,14 +288,14 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
     napi_value this_ptr; // ref to the method invoker
     napi_status status = napi_get_cb_info(env, info, NULL, NULL, &this_ptr, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to retrieve callback info");
+        napi_throw_error(env, NULL, "failed to retrieve callback info");
         return NULL;
     }
 
     node_t *node = NULL;
     status = napi_unwrap(env, this_ptr, &node);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to unwarp native object");
+        napi_throw_error(env, NULL, "failed to unwarp native object");
         return NULL;
     }
 
@@ -312,76 +313,89 @@ static napi_value js_get_message(napi_env env, napi_callback_info info) {
     napi_create_string_utf8(env, message_kind_str(msg->kind), NAPI_AUTO_LENGTH, &msg_kind);
     napi_set_named_property(env, result, "kind", msg_kind);
 
-    napi_value arr;
-    napi_create_array_with_length(env, msg->dlen, &arr);
-    napi_set_named_property(env, result, "diff", arr);
+    napi_value am_doc_obj;
+    napi_create_object(env, &am_doc_obj);
 
-    for (int i = 0; i < msg->dlen; i++) {
-        napi_value arr_obj; // javascript object that represents fdiff_t
-        napi_create_object(env, &arr_obj);
+    AMresult *root_result = AMmapRange(node->doc, AM_ROOT, AMstr(NULL), AMstr(NULL), NULL);
 
-        napi_value path;
-        napi_create_string_utf8(env, (msg->diff + i)->path, NAPI_AUTO_LENGTH, &path);
-        napi_set_named_property(env, arr_obj, "path", path);
-
-        napi_value cursor;
-        napi_create_uint32(env, (msg->diff + i)->cursor_r, &cursor);
-        napi_set_named_property(env, arr_obj, "cursor", cursor);
-
-        napi_value arr_lines;
-        napi_create_array_with_length(env, (msg->diff + i)->llen, &arr_lines);
-        napi_set_named_property(env, arr_obj, "lines", arr_lines);
-
-        for (int j = 0; j < (msg->diff + i)->llen; j++) {
-            napi_value line; // javascript object that represents fline_t
-            napi_create_object(env, &line);
-
-            // num
-            // napi_value num;
-            // napi_create_uint32(env, ((msg->diff + i)->lines + j)->num, &num);
-            // napi_set_named_property(env, line, "num", num);
-
-            // kind
-            napi_value kind;
-            napi_create_string_utf8(env, diff_kind_str(((msg->diff + i)->lines + j)->kind), NAPI_AUTO_LENGTH, &kind);
-            napi_set_named_property(env, line, "kind", kind);
-
-            // len
-            napi_value len;
-            napi_create_uint32(env, ((msg->diff + i)->lines + j)->len, &len);
-            napi_set_named_property(env, line, "len", len);
-
-            // body
-            napi_value body;
-            napi_create_string_utf8(env, ((msg->diff + i)->lines + j)->body, NAPI_AUTO_LENGTH, &body);
-            napi_set_named_property(env, line, "body", body);
-
-            // range_t
-            napi_value range_obj; // javascript object that represents range_t
-            napi_create_object(env, &range_obj);
-            
-            napi_value start_pos;
-            napi_create_uint32(env, (msg->diff + i)->lines->range.start_pos, &start_pos);
-            napi_set_named_property(env, range_obj, "start_pos", start_pos);
-
-            napi_value start_char;
-            napi_create_uint32(env, (msg->diff + i)->lines->range.start_char, &start_char);
-            napi_set_named_property(env, range_obj, "start_char", start_char);
-
-            napi_value end_pos;
-            napi_create_uint32(env, (msg->diff + i)->lines->range.end_pos, &end_pos);
-            napi_set_named_property(env, range_obj, "end_pos", end_pos);
-
-            napi_value end_char;
-            napi_create_uint32(env, (msg->diff + i)->lines->range.end_char, &end_char);
-            napi_set_named_property(env, range_obj, "end_char", end_char);
-            napi_set_named_property(env, line, "range", range_obj);
-            
-            napi_set_element(env, arr_lines, j, line);
-        }
-        
-        napi_set_element(env, arr, i, arr_obj);
+    if (!root_result || AMresultStatus(root_result) != AM_STATUS_OK) {
+        napi_throw_error(env, NULL, "failed to retrieve root objects");
+        return NULL;
     }
+
+    AMitems items = AMresultItems(root_result);
+    AMitem *item;
+
+    while ((item = AMitemsNext(&items, 1)) != NULL) {
+        AMbyteSpan key_span;
+
+        if (!AMitemKey(item, &key_span)) {
+            continue;
+        }
+
+        const AMobjId *file_id = AMitemObjId(item);
+
+        if (!file_id) {
+            continue;
+        }
+
+        if (AMobjObjType(node->doc, file_id) != AM_OBJ_TYPE_LIST) {
+            continue;
+        }
+
+        // Copy filename
+        char *filename = (char *)malloc(key_span.count + 1);
+        if (!filename) {
+            continue;
+        }
+
+        memcpy(filename, key_span.src, key_span.count);
+        filename[key_span.count] = '\0';
+
+        // Create JS property name
+        napi_value napi_filename;
+        napi_create_string_utf8(
+            env,
+            filename,
+            key_span.count,
+            &napi_filename
+        );
+
+        // Get file contents
+        char **list;
+        get_list(node->doc, filename, &list);
+
+        if (!list) {
+            free(filename);
+            continue;
+        }
+
+        // Create JS array
+        napi_value arr;
+        napi_create_array_with_length(env, arrlen(list), &arr);
+
+        for (uint32_t i = 0; i < arrlen(list); i++) {
+            napi_value line;
+
+            napi_create_string_utf8(
+                env,
+                list[i],
+                NAPI_AUTO_LENGTH,
+                &line
+            );
+
+            napi_set_element(env, arr, i, line);
+        }
+
+        // Add filename as property to the document object
+        napi_set_property(env, am_doc_obj, napi_filename, arr);
+
+        free(filename);
+    }
+
+    napi_set_named_property(env, result, "crdtDocument", am_doc_obj);
+
+    AMresultFree(root_result);
 
     return result;
 }
@@ -391,13 +405,13 @@ static napi_value js_get_pipe_fd(napi_env env, napi_callback_info info) {
     node_t *node = NULL;
     napi_status status = napi_get_cb_info(env, info, NULL, NULL, &this_ptr, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to retreive callback info");
+        napi_throw_error(env, NULL, "failed to retreive callback info");
         return NULL;
     }
 
     status = napi_unwrap(env, this_ptr, &node);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to unwarp native object");
+        napi_throw_error(env, NULL, "failed to unwarp native object");
         return NULL;
     }
 
@@ -412,81 +426,68 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
     napi_value args[1];
     napi_status status = napi_get_cb_info(env, info, &sz, args, &this_ptr, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to retrieve callback info");
+        napi_throw_error(env, NULL, "failed to retrieve callback info");
         return NULL;
     }
     
     node_t *node = NULL;
     status = napi_unwrap(env, this_ptr, &node);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to unwarp native object");
+        napi_throw_error(env, NULL, "failed to unwarp native object");
         return NULL;
     }
 
-    message_t msg = {0};
-    char *msg_kind_str = get_string_from_prop(env, args[0], "kind");
-    msg.kind = message_kind_str_to_enum(msg_kind_str);
-    free(msg_kind_str);
-    msg.dlen = get_u32_from_prop(env, args[0], "dlen");
+    char *filename = get_string_from_prop(env, args[0], "fileName");
+    AMresult *result = AMmapGet(node->doc, AM_ROOT, AMstr(filename), NULL);
     
-    // diff array
-    msg.diff = (fdiff_t *)malloc(sizeof(fdiff_t) * msg.dlen);
-    napi_value *diff_js_arr = (napi_value *)malloc(sizeof(napi_value) * msg.dlen);
-    get_array_from_prop(env, args[0], "diff", diff_js_arr); // each element of this is a line_t
-
-    for (uint32_t i = 0; i < msg.dlen; i++) {
-        fdiff_t diff = {0};
-        
-        diff.cursor_r = get_u32_from_prop(env, diff_js_arr[i], "cursor_position");
-        diff.path = get_string_from_prop(env, diff_js_arr[i], "path");
-        diff.plen = get_u32_from_prop(env, diff_js_arr[i], "plen");
-        diff.llen = get_u32_from_prop(env, diff_js_arr[i], "llen");
-        
-        // lines
-        diff.lines = (fline_t *)malloc(sizeof(fline_t) * diff.llen);
-        napi_value *lines = (napi_value *)malloc(sizeof(napi_value) * diff.llen);
-        get_array_from_prop(env, diff_js_arr[i], "lines", lines);
-        for (uint32_t j = 0; j < diff.llen; j++) {
-            fline_t line = {0};
-
-            // kind
-            char *diff_kind_str = get_string_from_prop(env, lines[j], "kind");
-            line.kind = diff_kind_str_to_enum(diff_kind_str);
-            free(diff_kind_str);
-
-            // len
-            line.len = get_u32_from_prop(env, lines[j], "len");
-
-            // body
-            line.body = get_string_from_prop(env, lines[j], "body");
-            diff.lines[0] = line;
-
-            // range
-            napi_value range = get_prop(env, diff_js_arr[i], "range");
-            range_t range_value;
-            range_value.start_pos = get_u32_from_prop(env, range, "start_pos");
-            range_value.start_char = get_u32_from_prop(env, range, "start_char");
-            range_value.end_pos = get_u32_from_prop(env, range, "end_pos");
-            range_value.end_char = get_u32_from_prop(env, range, "end_char");
-            line.range = range_value;
-        }
-        free(lines);
-
-        msg.diff[i] = diff;
+    if (!result || AMresultStatus(result) != AM_STATUS_OK) {
+        napi_throw_error(env, NULL, "error looking up key in the crdt document");
+        AMresultFree(result);
+        return NULL;
     }
-    free(diff_js_arr);
 
-    send_message(node->socket_d, &msg);
-    
-    // free allocated mem
-    for (uint32_t i = 0; i < msg.dlen; i++) {        
-        free(msg.diff[i].path);
-        for (uint32_t j = 0; j < msg.diff[i].llen; j++) {
-            free(msg.diff[i].lines->body);
-        }
+    AMobjId *obj_id = NULL; // pointer to the list in the document
+    AMresult *list_obj_result;
+    AMitem *item = AMresultItem(result);
+
+    if (!item || AMitemIdxType(item) == AM_VAL_TYPE_VOID) {
+        obj_id = add_list_to_document(node->doc, filename, &list_obj_result);
     }
-    free(msg.diff);
+    else {
+        obj_id = AMitemObjId(AMresultItem(result));
+    }
+
+    napi_value *operations = NULL;
+    get_array_from_prop(env, args[0], "operations", &operations);
+
+    // apply the operations to local crdt document
+    for (int i = 0; arrlen(operations); i++) {
+        char *diff_kind = get_string_from_prop(env, operations[i], "kind");
+        uint32_t line_number = get_u32_from_prop(env, operations[i], "line");
+        if (strcmp(diff_kind, "DIFF_MODIFIED") == 0) {
+            char *content = get_string_from_prop(env, operations[i], "content");
+            update_list_element(node->doc, obj_id, content, line_number);
+            free(content);
+        }
+        else if (strcmp(diff_kind, "DIFF_ADDED") == 0) {
+            char *content = get_string_from_prop(env, operations[i], "content");
+            put_element_into_list(node->doc, obj_id, content, line_number);
+            free(content);
+        }
+        else {
+            delete_element_from_list(node->doc, obj_id, line_number);
+        }
+
+        free(diff_kind);
+    }
+
+    message_t msg = {.kind = MSG_CONTENT, .doc = node->doc};
+    send_message(node->connected_sockets[0], &msg);
     
+    arrfree(operations);
+    free(filename);
+    AMresultFree(result);
+    AMresultFree(list_obj_result);
     return NULL;
 }
 
@@ -495,7 +496,7 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
     napi_value args[2];
     napi_status status = napi_get_cb_info(env, info, &sz, args, NULL, NULL);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to get callback info");
+        napi_throw_error(env, NULL, "failed to get callback info");
         return NULL;
     }
 
@@ -505,7 +506,7 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
     path = get_string_utf8(env, args[0]);
     status = napi_get_value_int32(env, args[1], &port);
     if (status != napi_ok) {
-        napi_throw_error(env, NULL, "Failed to extract port from callback info");
+        napi_throw_error(env, NULL, "failed to extract port from callback info");
         return NULL;
     }
 
@@ -513,7 +514,7 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
     int res = server_start(node, port, path);
 
     if (res == -1) {
-        perror("Error starting server");
+        perror("error starting server");
         free(node);
         return NULL;
     }
@@ -523,7 +524,7 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
     status = napi_create_object(env, &result);
 
     if (status != napi_ok) {
-        perror("Error creating node data structure js holder");
+        perror("error creating node data structure js holder");
         free(node);
         return NULL;
     }
