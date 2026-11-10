@@ -1,6 +1,5 @@
 #include "connection.h"
 #include "errno.h"
-#include "fileio.h"
 #include "log.h"
 #include "queue.h"
 #include "string.h"
@@ -204,65 +203,37 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
 }
 
 // structure of a message_t
-// | header: 4 bytes |
-// |=================|
-// | kind:   4 bytes |
-// | dlen:   4 bytes |
-// | diff:
-//        | diff (1)
-//                | plen:     4 bytes |
-//                | path:  plen bytes |
-//                | llen:     4 bytes |
-//                | lines:
-//                        | line (0)
-//                                | kind:   4 bytes |
-//                                | range: 16 bytes |
-//                                        | start_pos:  4 bytes|
-//                                        | start_char: 4 bytes|
-//                                        | end_pos:    4 bytes|
-//                                        | end_char:   4 bytes|
-//                                | len:    4 bytes |
-//                                | body: len bytes |
-//                        | line (1) ...    |
-//                        ...
-//                        | line (llen) ... |
-//                | cursor_r: 4 bytes |
-//        | diff (2) ...    |
-//        ...
-//        | diff (dlen) ... |
+// | header:       4 bytes |
+// |=======================|
+// | kind:         4 bytes |
+// | doc_size:     4 bytes |
+// | crdt:  doc_size bytes |
 
 char *package_message(message_t *msg) {
   dbg_print("packing message\n");
 
-  // total bytes excluding header
-  uint32_t total_bytes = 4 + 4;
-  for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4;
-    for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len + sizeof(range_t);
-    }
+  char *buffer;
+  int bytes_serialised = serialise_document(msg->doc, &buffer);
+  if (bytes_serialised < 0) {
+    free(buffer);
+    fprintf(stderr, "error serialising automerge document");
+    return NULL;
   }
+  const uint32_t total_bytes = 4 + 4 + bytes_serialised; // excluding header
   char *buf = (char *)malloc(MSG_HEADER_BYTES + total_bytes);
 
   dbg_print("message size %d", total_bytes);
 
-  // serialize message_t
   uint32_t total = htonl(total_bytes);
   uint32_t kind = htonl(msg->kind);
-  uint32_t dlen = htonl(msg->dlen);
+  uint32_t doc_size = htonl(bytes_serialised);
 
   dbg_print("header %d", total_bytes);
 
   memcpy(buf, &total, MSG_HEADER_BYTES);
   memcpy(buf + MSG_HEADER_BYTES, &kind, 4);
-  memcpy(buf + MSG_HEADER_BYTES + 4, &dlen, 4);
-
-  int shift = MSG_HEADER_BYTES + 8;
-
-  // serialize fdiff_t
-  for (size_t i = 0; i < msg->dlen; i++) {
-    shift += package_fdiff_t(msg->diff, buf + shift);
-  }
+  memcpy(buf + MSG_HEADER_BYTES + 4, &doc_size, 4);
+  memcpy(buf + MSG_HEADER_BYTES + 4 + 4, buffer, bytes_serialised);
 
   dbg_print("packing complete\n");
 
@@ -270,30 +241,22 @@ char *package_message(message_t *msg) {
 }
 
 // call this method skipping the first 4 bytes of the Header
-message_t *unpackage_message(char *buf) {
+message_t *unpackage_message(char *buf, AMdoc *doc) {
   dbg_print("unpacking message\n");
 
   message_t *msg = (message_t *)malloc(sizeof(message_t));
 
-  // deserialize to message_t
   uint32_t kind;
-  uint32_t dlen;
-
   memcpy(&kind, buf, 4);
-  memcpy(&dlen, buf + 4, 4);
-
   msg->kind = ntohl(kind);
-  msg->dlen = ntohl(dlen);
 
-  msg->diff = (fdiff_t *)malloc(msg->dlen * sizeof(fdiff_t));
+  uint32_t doc_size;
+  memcpy(&doc_size, buf + 4, 4);
+  doc_size = ntohl(doc_size);
 
-  int shift = 8;
-
-  dbg_print("about to unpack diff");
-
-  // deserialize to fdiff_t
-  for (size_t i = 0; i < msg->dlen; i++) {
-    shift += unpackage_fdiff_t(msg->diff, buf + shift);
+  if (deserialise_document(doc, buf + 4 + 4, doc_size) < 0) {
+    fprintf(stderr, "error deserialising automerge document");
+    return NULL;
   }
 
   return msg;
@@ -371,7 +334,8 @@ void receive_messages(int conn_d, const node_t *node) {
     char *buf = recv_message(conn_d, header);
     if (buf == NULL)
       break;
-    message_t *msg = unpackage_message(buf);
+    
+    message_t *msg = unpackage_message(buf, node->doc);
     on_message_received(conn_d, msg, node);
   }
 
@@ -382,15 +346,12 @@ void receive_messages(int conn_d, const node_t *node) {
 
 int send_message(int conn_d, message_t *msg) {
   dbg_print("sending message %s\n", message_kind_str(msg->kind));
-  uint32_t total_bytes = MSG_HEADER_BYTES + 4 + 4;
-  for (size_t i = 0; i < msg->dlen; i++) {
-    total_bytes += 4 + msg->diff[i].plen + 4;
-    for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      total_bytes += 4 + 4 + 4 + msg->diff[i].lines[j].len + sizeof(range_t);
-    }
-  }
 
   char *buf = package_message(msg);
+  uint32_t total_bytes_excluding_header;
+  memcpy(&total_bytes_excluding_header, buf, 4);
+
+  const uint32_t total_bytes = MSG_HEADER_BYTES + ntohl(total_bytes_excluding_header);
 
   dbg_print("sending message %d", total_bytes);
 
@@ -434,7 +395,7 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
       perror("failed to write wake up");
       return;
     }
-    message_t re_msg = {.kind = MSG_ACK, .dlen = 0};
+    message_t re_msg = {.kind = MSG_ACK, .doc = NULL};
     send_message(conn_d, &re_msg);
     break;
   }
@@ -445,19 +406,14 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
       perror("failed to write wake up");
       return;
     }
-    fline_t *lines = read_file(node->file.path);
-    fdiff_t diff = {.plen = strlen(node->file.path),
-                    .path = node->file.path,
-                    .llen = arrlen(lines),
-                    .lines = lines}
-    ;
+    
     message_t re_msg = {
         .kind = SERVER_HELLO,
-        .dlen = 1,
-        .diff = (fdiff_t[]){diff},
+        .doc = node->doc
     };
-    // message_t re_msg = {.kind = MSG_ACK, .dlen = 0};
+
     send_message(conn_d, &re_msg);
+
     break;
   }
   default:

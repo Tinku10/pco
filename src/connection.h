@@ -9,6 +9,9 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <automerge-c/automerge.h>
+#include <automerge-c/utils/string.h>
+#include "crdt_utils.h"
 
 #define MAX_CLIENTS 1
 #define LISTEN_BACKLOG 10
@@ -78,6 +81,7 @@ typedef struct message {
   // size_t blen;
   fdiff_t *diff;
   size_t dlen;
+  AMdoc *doc; // incremental change made to doc
 } message_t;
 
 typedef struct node {
@@ -98,6 +102,8 @@ typedef struct node {
   message_t** inbox;
   // pipe to send event on data available
   int event[2];
+  // local CRDT document
+  AMdoc *doc;
 } node_t;
 
 const char *message_kind_str(message_kind);
@@ -113,7 +119,7 @@ int client_listen(node_t*, char* ip, int port);
 
 // serialization
 char *package_message(message_t *);
-message_t *unpackage_message(char *);
+message_t *unpackage_message(char *, AMdoc *);
 
 int package_range_t(range_t *, char *);
 int unpackage_range_t(range_t *, char *);
@@ -123,6 +129,9 @@ int unpackage_fline_t(fline_t *, char *);
 
 int package_fdiff_t(fdiff_t *, char *);
 int unpackage_fdiff_t(fdiff_t *, char *);
+
+// message print utility
+// void to_string_message_t(message_t *msg);
 
 
 // message fetch

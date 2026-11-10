@@ -25,7 +25,7 @@ int client_connect(char *ip, int port) {
 }
 
 int client_hello(const node_t* node) {
-  message_t msg = { .kind = CLIENT_HELLO, .dlen = 0};
+  message_t msg = { .kind = CLIENT_HELLO, .doc = NULL};
 
   send_message(node->connected_sockets[0], &msg);
 
@@ -58,6 +58,8 @@ int client_listen(node_t* node, char* ip, int port) {
   node->connections = 0;
   node->connected_sockets[node->connections++] = socket;
   node->kind = NODE_CONTRIBUTOR;
+  AMresult *result = AMcreate(NULL);
+  node->doc = get_document(result);
   // set up the pipe
   if (pipe(node->event) == -1) {
     perror("failed to set up pipe");
