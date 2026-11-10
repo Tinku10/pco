@@ -47,12 +47,6 @@ set(AUTOMERGE_INSTALL_DIR
     "${CMAKE_SOURCE_DIR}/libs/automerge/rust/automerge-c/install"
 )
 
-find_path(AUTOMERGE_INCLUDE_DIR
-    NAMES automerge.h
-    PATHS "${AUTOMERGE_INSTALL_DIR}/include"
-    REQUIRED
-)
-
 find_library(AUTOMERGE_LIBRARY
     NAMES automerge
     PATHS "${AUTOMERGE_INSTALL_DIR}/lib"
@@ -80,7 +74,7 @@ target_include_directories(pco PRIVATE
   ${LUAJIT_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src
   ${NODE_API_INCLUDE_DIR}
-  ${AUTOMERGE_INSTALL_DIR}
+  ${AUTOMERGE_INSTALL_DIR}/include
 )
 
 target_compile_options(pco PRIVATE -Wall -Wextra -g -O0)
@@ -95,10 +89,14 @@ target_include_directories(pcojs PRIVATE
   ${LUAJIT_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/src
   ${NODE_API_INCLUDE_DIR}
+  ${AUTOMERGE_INSTALL_DIR}/include
 )
-target_compile_options(pcojs PRIVATE -Wall -Wextra -g -O0)
+target_compile_options(pcojs PRIVATE -Wall -Wextra -g -O0 -DDEBUG)
 # Missing symbols are loaded by Node JS runtime
 target_link_options(pcojs PRIVATE -Wall -Wextra -g -O0 -undefined dynamic_lookup)
+target_link_libraries(pcojs PRIVATE     
+  "${AUTOMERGE_LIBRARY}"
+)
 # Node js expects .node extension in shared objects
 set_target_properties(pcojs PROPERTIES
   PREFIX "lib"
@@ -114,4 +112,15 @@ target_include_directories(pcotest PRIVATE
   ${CMAKE_SOURCE_DIR}/libs
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/test
+  ${AUTOMERGE_INSTALL_DIR}/include
+)
+target_link_libraries(pcotest PRIVATE "${AUTOMERGE_LIBRARY}")
+# enable sanitizers to debug memory leaks
+target_compile_options(pcotest PRIVATE
+  -fsanitize=address,undefined
+  -fno-omit-frame-pointer
+  -g
+)
+target_link_options(pcotest PRIVATE
+  -fsanitize=address,undefined
 )
