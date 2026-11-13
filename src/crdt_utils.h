@@ -92,6 +92,15 @@ int delete_element_from_list(AMdoc *doc, const AMobjId *obj_id, int32_t position
 void get_list(AMdoc *doc, const char *key, char ***str_list);
 
 /**
+ * @brief Get the size of list object
+ * 
+ * @param[in] doc the Automerge document
+ * @param[in] key name of the key in root of Automerge document
+ * @return size of the list if operation is successful, -1 otherwise
+ */
+int get_list_size(AMdoc *doc, const char *key);
+
+/**
  * @brief serialises the incremental changes made to a document
  *
  *

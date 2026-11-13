@@ -129,6 +129,29 @@ void get_list(AMdoc *doc, const char *filename, char ***str_list) {
   AMresultFree(file_result);
 }
 
+int get_list_size(AMdoc *doc, const char *filename) {
+  AMbyteSpan key = {.src = (const uint8_t *)filename,
+                    .count = strlen(filename)};
+
+  AMresult *file_result = AMmapGet(doc, AM_ROOT, key, NULL);
+
+  if (!file_result) {
+    fprintf(stderr, "failed to retrieve file: %s\n", filename);
+    return -1;
+  }
+
+  // object id of the filename in the document
+  const AMobjId *file_id = AMitemObjId(AMresultItem(file_result));
+
+  if (!file_id || AMobjObjType(doc, file_id) != AM_OBJ_TYPE_LIST) {
+    fprintf(stderr, "file not found or is not a List: %s\n", filename);
+    AMresultFree(file_result);
+    return -1;
+  }
+
+  return AMobjSize(doc, file_id, NULL);
+}
+
 int serialise_document(AMdoc *doc, char **buffer) {
   if (!doc) {
     return 0;

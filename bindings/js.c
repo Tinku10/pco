@@ -13,6 +13,7 @@
 #include "queue.h"
 #include <node_api.h>
 #include <stdlib.h>
+#define MIN(x, y) (x > y ? y : x)
 
 static napi_value js_client_hello(napi_env, napi_callback_info);
 static napi_value js_get_pipe_fd(napi_env, napi_callback_info);
@@ -466,44 +467,58 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
     obj_id = AMitemObjId(AMresultItem(result));
   }
 
+  uint32_t doc_sz = get_list_size(node->doc, filename);
+  free(filename);
   napi_value **operations;
   get_array_from_prop(env, args[0], "operations", &operations);
 
   // apply the operations to local crdt document
-  for (int i = 0; i < arrlen(operations); i++) {
-    char *diff_kind = get_string_from_prop(env, *operations[i], "kind");
-    uint32_t line_number = get_u32_from_prop(env, *operations[i], "line");
-    if (strcmp(diff_kind, "DIFF_MODIFIED") == 0) {
-      char *content = get_string_from_prop(env, *operations[i], "content");
-      if (update_list_element(node->doc, obj_id, content, line_number) < 0) {
-        free(content);
-        napi_throw_error(env, NULL, "error sending message");
-        // TODO: handle memory cleanup of AM results
-        return NULL;
-      }
-    } else if (strcmp(diff_kind, "DIFF_ADDED") == 0) {
-      char *content = get_string_from_prop(env, *operations[i], "content");
-      if (put_element_into_list(node->doc, obj_id, content, line_number) < 0) {
-        free(content);
-        napi_throw_error(env, NULL, "error sending message");
-        return NULL;
-      }
-    } else {
-      if (delete_element_from_list(node->doc, obj_id, line_number) < 0) {
-        napi_throw_error(env, NULL, "error sending message");
-        return NULL;
-      }
+  for (int i = 0; i < MIN(arrlen(operations), doc_sz); i++) {
+    const char *line = get_string_utf8(env, *operations[i]);
+    if (update_list_element(node->doc, obj_id, line, i) < 0) {
+      free(line);
+      free(operations[i]);
+      arrfree(operations);
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      napi_throw_error(env, NULL, "error sending message");
+      return NULL;
     }
 
-    free(diff_kind);
     free(operations[i]);
+  }
+  // lines to be deleted
+  for (int i = arrlen(operations); i < doc_sz; i++) {
+    if (delete_element_from_list(node->doc, obj_id, i) < 0) {
+      free(operations[i]);
+      arrfree(operations);
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      napi_throw_error(env, NULL, "error sending message");
+      return NULL;
+    }
+  }
+  // lines to be added
+  for (int i = doc_sz; i < arrlen(operations); i++) {
+    const char *line = get_string_utf8(env, *operations[i]);
+    if (put_element_into_list(node->doc, obj_id, line, i) < 0) {
+      free(line);
+      free(operations[i]);
+      arrfree(operations);
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      napi_throw_error(env, NULL, "error sending message");
+      return NULL;
+    }
   }
 
   message_t msg = {.kind = MSG_CONTENT, .doc = node->doc};
   send_message(node->connected_sockets[0], &msg);
 
   arrfree(operations);
-  free(filename);
   AMresultFree(result);
   if (list_obj_allocated)
     AMresultFree(list_obj_result);
