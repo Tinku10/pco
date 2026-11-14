@@ -12,6 +12,7 @@
 #include <stb/stb_ds.h>
 #include <stdio.h>
 #include <stdlib.h>
+#define MIN(x, y) (x > y ? y : x)
 
 /**
  * @brief get the AMdoc from result
@@ -99,6 +100,16 @@ void get_list(AMdoc *doc, const char *key, char ***str_list);
  * @return size of the list if operation is successful, -1 otherwise
  */
 int get_list_size(AMdoc *doc, const char *key);
+
+/**
+ * @brief overwrites the content of current list with new elements
+ * 
+ * @param[in] doc the Automerge document
+ * @param[in] key name of the key in root of Automerge document whose value is to be overwritten
+ * @param[in] new_list pointer to the list
+ * @return 0 if the operation is successful, -1 otherwise
+ */
+int overwrite_list(AMdoc *doc, const char *key, char **new_list);
 
 /**
  * @brief serialises the incremental changes made to a document

@@ -203,6 +203,7 @@ static void get_array_from_prop(napi_env env, napi_value obj, const char *name,
       char buffer[100];
       snprintf(buffer, sizeof(buffer),
                "[%s]: error extracting %d element of array", name, i);
+      free(line_obj);
       napi_throw_error(env, NULL, buffer);
       return;
     }
@@ -289,12 +290,15 @@ static napi_value js_get_document_state(napi_env env, napi_callback_info info) {
       napi_create_string_utf8(env, list[i], NAPI_AUTO_LENGTH, &line);
 
       napi_set_element(env, arr, i, line);
+
+      free(list[i]);
     }
 
     // Add filename as property to the document object
     napi_set_property(env, am_doc_obj, napi_filename, arr);
 
     free(filename);
+    arrfree(list);
   }
 
   AMresultFree(root_result);
@@ -447,81 +451,39 @@ static napi_value js_send_message(napi_env env, napi_callback_info info) {
   }
 
   char *filename = get_string_from_prop(env, args[0], "fileName");
-  AMresult *result = AMmapGet(node->doc, AM_ROOT, AMstr(filename), NULL);
+  napi_value **operations;
+  get_array_from_prop(env, args[0], "operations", &operations);
+  
+  char **c_list = NULL;
+  for (int i = 0; i < arrlen(operations); i++) {
+    arrput(c_list, get_string_utf8(env, *operations[i]));
+  }
 
-  if (!result || AMresultStatus(result) != AM_STATUS_OK) {
-    napi_throw_error(env, NULL, "error looking up key in the crdt document");
-    AMresultFree(result);
+  if (overwrite_list(node->doc, filename, c_list) < 0) {
+    for (int i = 0; i < arrlen(operations); i++) {
+      free(operations[i]);
+      free(c_list[i]);
+    }
+    free(filename);
+    arrfree(operations);
+    arrfree(c_list);
+    napi_throw_error(env, NULL, "failed to update local crdt document");
     return NULL;
   }
 
-  AMobjId *obj_id = NULL; // pointer to the list in the document
-  AMresult *list_obj_result;
-  bool list_obj_allocated = false;
-  AMitem *item = AMresultItem(result);
-
-  if (!item || AMitemValType(item) == AM_VAL_TYPE_VOID) {
-    obj_id = add_list_to_document(node->doc, filename, &list_obj_result);
-    list_obj_allocated = true;
-  } else {
-    obj_id = AMitemObjId(AMresultItem(result));
-  }
-
-  uint32_t doc_sz = get_list_size(node->doc, filename);
-  free(filename);
-  napi_value **operations;
-  get_array_from_prop(env, args[0], "operations", &operations);
-
-  // apply the operations to local crdt document
-  for (int i = 0; i < MIN(arrlen(operations), doc_sz); i++) {
-    const char *line = get_string_utf8(env, *operations[i]);
-    if (update_list_element(node->doc, obj_id, line, i) < 0) {
-      free(line);
-      free(operations[i]);
-      arrfree(operations);
-      AMresultFree(result);
-      if (list_obj_allocated)
-        AMresultFree(list_obj_result);
-      napi_throw_error(env, NULL, "error sending message");
-      return NULL;
-    }
-
+  // free the list's contents
+  for (int i = 0; i < arrlen(operations); i++) {
     free(operations[i]);
-  }
-  // lines to be deleted
-  for (int i = arrlen(operations); i < doc_sz; i++) {
-    if (delete_element_from_list(node->doc, obj_id, i) < 0) {
-      free(operations[i]);
-      arrfree(operations);
-      AMresultFree(result);
-      if (list_obj_allocated)
-        AMresultFree(list_obj_result);
-      napi_throw_error(env, NULL, "error sending message");
-      return NULL;
-    }
-  }
-  // lines to be added
-  for (int i = doc_sz; i < arrlen(operations); i++) {
-    const char *line = get_string_utf8(env, *operations[i]);
-    if (put_element_into_list(node->doc, obj_id, line, i) < 0) {
-      free(line);
-      free(operations[i]);
-      arrfree(operations);
-      AMresultFree(result);
-      if (list_obj_allocated)
-        AMresultFree(list_obj_result);
-      napi_throw_error(env, NULL, "error sending message");
-      return NULL;
-    }
+    free(c_list[i]);
   }
 
   message_t msg = {.kind = MSG_CONTENT, .doc = node->doc};
   send_message(node->connected_sockets[0], &msg);
 
+  free(filename);
   arrfree(operations);
-  AMresultFree(result);
-  if (list_obj_allocated)
-    AMresultFree(list_obj_result);
+  arrfree(c_list);
+
   return NULL;
 }
 
@@ -540,12 +502,15 @@ static napi_value js_server_start(napi_env env, napi_callback_info info) {
   path = get_string_utf8(env, args[0]);
   status = napi_get_value_int32(env, args[1], &port);
   if (status != napi_ok) {
+    free(path);
     napi_throw_error(env, NULL, "failed to extract port from callback info");
     return NULL;
   }
 
   node_t *node = (node_t *)malloc(sizeof(node_t));
   int res = server_start(node, port, path);
+
+  free(path);
 
   if (res == -1) {
     perror("error starting server");

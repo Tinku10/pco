@@ -152,6 +152,61 @@ int get_list_size(AMdoc *doc, const char *filename) {
   return AMobjSize(doc, file_id, NULL);
 }
 
+int overwrite_list(AMdoc *doc, const char *key, char **new_list) {
+  AMresult *result = AMmapGet(doc, AM_ROOT, AMstr(key), NULL);
+
+  if (!result || AMresultStatus(result) != AM_STATUS_OK) {
+    AMresultFree(result);
+    return -1;
+  }
+
+  AMobjId *obj_id = NULL; // pointer to the list in the document
+  AMresult *list_obj_result;
+  bool list_obj_allocated = false;
+  AMitem *item = AMresultItem(result);
+
+  if (!item || AMitemValType(item) == AM_VAL_TYPE_VOID) {
+    obj_id = add_list_to_document(doc, key, &list_obj_result);
+    list_obj_allocated = true;
+  } else {
+    obj_id = AMitemObjId(AMresultItem(result));
+  }
+
+  uint32_t doc_sz = get_list_size(doc, key);
+
+  // elements updated
+  for (int i = 0; i < MIN(arrlen(new_list), doc_sz); i++) {
+    if (update_list_element(doc, obj_id, new_list[i], i) < 0) {
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      return -1;
+    }
+  }
+  // elements deleted
+  for (int i = arrlen(new_list); i < doc_sz; i++) {
+    // once element at position i is deleted, all elements to its right will
+    // shift left by one position. So effectively the position of elements
+    // to be deleted will stay same which is arrlen(new_list)
+    if (delete_element_from_list(doc, obj_id, arrlen(new_list)) < 0) {
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      return -1;
+    }
+  }
+  // elements added
+  for (int i = doc_sz; i < arrlen(new_list); i++) {
+    if (put_element_into_list(doc, obj_id, new_list[i], i) < 0) {
+      AMresultFree(result);
+      if (list_obj_allocated)
+        AMresultFree(list_obj_result);
+      return -1;
+    }
+  }
+  return 0;
+}
+
 int serialise_document(AMdoc *doc, char **buffer) {
   if (!doc) {
     return 0;
