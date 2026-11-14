@@ -7,27 +7,29 @@
 #include <lualib.h>
 #include <stb/stb_ds.h>
 
-fline_t* get_lines(const char* content, diff_kind kind, range_t range) {
-  char* start = content;
-  char* end;
-  fline_t* lines = NULL;
+fline_t *get_lines(const char *content, diff_kind kind, range_t range) {
+  char *start = content;
+  char *end;
+  fline_t *lines = NULL;
 
   while ((end = strchr(start, '\n')) != NULL) {
     size_t m_len = end - start;
     char *m_content = (char *)malloc(sizeof(char) * m_len + 1);
     memcpy(m_content, start, m_len);
     m_content[m_len] = '\0';
-    fline_t m_line = {.body =  m_content, .len = m_len, .kind = kind, .range = range};
+    fline_t m_line = {
+        .body = m_content, .len = m_len, .kind = kind, .range = range};
     arrput(lines, m_line);
     start = end + 1;
   }
-  
+
   if ((end = strchr(start, '\0')) != NULL) {
     size_t m_len = end - start;
     char *m_content = (char *)malloc(sizeof(char) * m_len + 1);
     memcpy(m_content, start, m_len);
     m_content[m_len] = '\0';
-    fline_t m_line = {.body = m_content, .len = m_len, .kind = kind, .range = range};
+    fline_t m_line = {
+        .body = m_content, .len = m_len, .kind = kind, .range = range};
     arrput(lines, m_line);
     start = end + 1;
   }
@@ -52,6 +54,81 @@ fline_t* get_lines(const char* content, diff_kind kind, range_t range) {
 
 //   return 1;
 // }
+
+static void push_document_state(lua_State *L, node_t *node) {
+  if (!node || !node->doc) {
+    lua_pushnil(L);
+    return;
+  }
+
+  AMresult *root_result =
+      AMmapRange(node->doc, AM_ROOT, AMstr(NULL), AMstr(NULL), NULL);
+
+  if (!root_result || AMresultStatus(root_result) != AM_STATUS_OK) {
+    AMresultFree(root_result);
+    lua_pushnil(L);
+    return;
+  }
+
+  // Create document-state table
+  lua_newtable(L);
+
+  AMitems items = AMresultItems(root_result);
+  AMitem *item;
+
+  while ((item = AMitemsNext(&items, 1)) != NULL) {
+    AMbyteSpan key_span;
+
+    if (!AMitemKey(item, &key_span)) {
+      continue;
+    }
+
+    const AMobjId *file_id = AMitemObjId(item);
+
+    if (!file_id || AMobjObjType(node->doc, file_id) != AM_OBJ_TYPE_LIST) {
+      continue;
+    }
+
+    // Copy filename for get_list()
+    char *filename = malloc(key_span.count + 1);
+
+    if (!filename) {
+      continue;
+    }
+
+    memcpy(filename, key_span.src, key_span.count);
+    filename[key_span.count] = '\0';
+
+    char **list = NULL;
+    get_list(node->doc, filename, &list);
+
+    if (!list) {
+      free(filename);
+      continue;
+    }
+
+    // Create Lua array
+    lua_newtable(L);
+
+    uint32_t count = arrlen(list);
+
+    for (uint32_t i = 0; i < count; i++) {
+      lua_pushstring(L, list[i]);
+      lua_rawseti(L, -2, i + 1);
+
+      free(list[i]);
+    }
+
+    // document[filename] = lines
+    lua_setfield(L, -2, filename);
+
+    free(filename);
+
+    arrfree(list);
+  }
+
+  AMresultFree(root_result);
+}
 
 int lua_client_listen(lua_State *L) {
   // node_t *node = (node_t *)malloc(sizeof(node_t));
@@ -88,7 +165,8 @@ int lua_get_message(lua_State *L) {
   // size_t address = luaL_checkinteger(L, 1);
   // node_t *node = (node_t *)address;
 
-  dbg_print("getting message from %d, left=%d\n", node->socket_d, arrlen(node->inbox));
+  dbg_print("getting message from %d, left=%d\n", node->socket_d,
+            arrlen(node->inbox));
 
   message_t *msg = qpop(&node->inbox);
   if (msg == NULL) {
@@ -102,64 +180,8 @@ int lua_get_message(lua_State *L) {
   lua_pushstring(L, message_kind_str(msg->kind));
   lua_setfield(L, -2, "kind");
 
-  lua_newtable(L);
-
-  for (size_t i = 0; i < msg->dlen; i++) {
-    lua_newtable(L);
-
-    // lua_pushstring(L, diff_kind_str(msg->diff[i].kind));
-    // lua_setfield(L, -2, "kind");
-
-    if (msg->diff[i].plen > 0) {
-      lua_pushlstring(L, msg->diff[i].path, msg->diff[i].plen);
-      lua_setfield(L, -2, "path");
-    }
-
-    lua_pushinteger(L, msg->diff[i].cursor_r);
-    lua_setfield(L, -2, "cursor_r");
-
-    lua_newtable(L);
-
-    for (size_t j = 0; j < msg->diff[i].llen; j++) {
-      lua_newtable(L);
-
-      // lua_pushinteger(L, msg->diff[i].lines[j].num);
-      // lua_setfield(L, -2, "num");
-
-      lua_pushstring(L, diff_kind_str(msg->diff[i].lines[j].kind));
-      lua_setfield(L, -2, "kind");
-
-      lua_pushinteger(L, msg->diff[i].lines[j].len);
-      lua_setfield(L, -2, "len");
-
-      lua_pushlstring(L, msg->diff[i].lines[j].body, msg->diff[i].lines[j].len);
-      lua_setfield(L, -2, "body");
-
-      lua_newtable(L);
-
-      lua_pushinteger(L, msg->diff[i].lines[j].range.start_pos);
-      lua_setfield(L, -2, "start_row");
-
-      lua_pushinteger(L, msg->diff[i].lines[j].range.start_char);
-      lua_setfield(L, -2, "start_col");
-
-      lua_pushinteger(L, msg->diff[i].lines[j].range.end_pos);
-      lua_setfield(L, -2, "end_row");
-
-      lua_pushinteger(L, msg->diff[i].lines[j].range.end_char);
-      lua_setfield(L, -2, "end_col");
-
-      lua_setfield(L, -2, "range");
-
-      lua_rawseti(L, -2, j + 1);
-    }
-
-    lua_setfield(L, -2, "lines");
-
-    lua_rawseti(L, -2, i + 1);
-  }
-
-  lua_setfield(L, -2, "diffs");
+  push_document_state(L, node);
+  lua_setfield(L, -2, "crdt_document");
 
   dbg_print("got message");
 
@@ -178,33 +200,50 @@ int lua_get_eventfd(lua_State *L) {
 
 int lua_send_message(lua_State *L) {
   dbg_print("inside send message");
+
   node_t *node = luaL_checkudata(L, 1, "Node");
-  // size_t address = luaL_checkinteger(L, 1);
-  // node_t *node = (node_t *)address;
 
-  const char *path = luaL_checkstring(L, 2);
+  const char *filename = luaL_checkstring(L, 2);
 
-  int start_row = luaL_checkinteger(L, 3);
-  int start_col = luaL_checkinteger(L, 4);
+  luaL_checktype(L, 3, LUA_TTABLE);
 
-  int end_row = luaL_checkinteger(L, 5);
-  int end_col = luaL_checkinteger(L, 6);
+  size_t line_count = lua_objlen(L, 3);
 
-  diff_kind kind = diff_kind_str_to_enum(luaL_checkstring(L, 7));
+  char **lines = NULL;
 
-  const char* content = luaL_checkstring(L, 8);
-  // char *prev_state = luaL_checkstring(L, 3);
-  // char *curr_state = luaL_checkstring(L, 4);
-  range_t range = { .start_pos = start_row, .start_char = start_col, .end_pos = end_row, .end_char = end_col };
-  fline_t* lines = get_lines(content, kind, range);
+  for (size_t i = 1; i <= line_count; i++) {
+    lua_rawgeti(L, 3, i);
 
-  fdiff_t diff = {.path = path, .plen = strlen(path), .lines = lines, .llen = arrlen(lines)};
-  // fdiff_t *diff = get_buffer_diff(path, prev_state, curr_state);
-  message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = &diff};
-  dbg_print("diff calculation ends");
+    size_t len;
+    const char *line = luaL_checklstring(L, -1, &len);
 
+    char *copy = malloc(len + 1);
+    if (!copy) {
+      lua_pop(L, 1);
+      return luaL_error(L, "allocation failed");
+    }
+
+    memcpy(copy, line, len);
+    copy[len] = '\0';
+
+    arrpush(lines, copy);
+    lua_pop(L, 1);
+  }
+
+  dbg_print("filename: %s, lines: %zu\n", filename, arrlen(lines));
+
+  if (overwrite_list(node->doc, filename, lines) < 0) {
+    arrfree(lines);
+    return luaL_error(L, "failed to update local crdt document");
+  }
+
+  message_t msg = {.kind = MSG_CONTENT, .doc = node->doc};
   send_message(node->connected_sockets[0], &msg);
-  dbg_print("message sent");
+
+  for (size_t i = 0; i < arrlen(lines); i++) {
+    free(lines[i]);
+  }
+  arrfree(lines);
 
   return 0;
 }
