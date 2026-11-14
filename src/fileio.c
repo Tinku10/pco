@@ -38,48 +38,60 @@ char **read_file(char *path) {
   return lines;
 }
 
-int is_file_ignored(char* file_path, char** ignore_list) {
+char *path_relative_from_base(char *base_path, char *file_path) {
+  uint32_t base_sz = strlen(base_path);
+  uint32_t curr_sz = strlen(file_path);
+  char *path_from_base = (char *)malloc(curr_sz - base_sz);
+  // extra 1 to exclude the / from base
+  memcpy(path_from_base, file_path + base_sz + 1, curr_sz - base_sz - 1);
+  path_from_base[curr_sz - base_sz - 1] = '\0';
+  return path_from_base;
+}
+
+int is_file_ignored(char *base_path, char* file_path, char** ignore_list) {
   if (ignore_list == NULL)
     return 0;
 
+  char *path_from_base = path_relative_from_base(base_path, file_path);
+
   for (int i = 0; i < arrlen(ignore_list); i++) {
-    if (fnmatch(ignore_list[i], file_path, 0) == 0) {
+    if (fnmatch(ignore_list[i], path_from_base, 0) == 0) {
+      free(path_from_base);
       return 1;
     }
   }
-
+  free(path_from_base);
   return 0;
 }
 
-char **read_dir_layout(char *base_path) {
+char **read_dir_layout(char *base_path, char *file_path, char **ignored_files) {
   char** files = NULL;
 
-  char pcoignore_path[1024];
-  snprintf(pcoignore_path, sizeof(pcoignore_path), "%s/%s", base_path, ".pcoignore");
-
-  char** ignored_files = read_file(pcoignore_path);
-
-  DIR *dir = opendir(base_path);
+  DIR *dir = opendir(file_path);
   if (!dir) {
     return files;
   }
 
   struct dirent *entry;
-  char path[1024];
+  
 
   while ((entry = readdir(dir)) != NULL) {
     if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
       continue;
     }
-
-    snprintf(path, sizeof(path), "%s/%s", base_path, entry->d_name);
+    
+    char path[1024];
+    snprintf(path, 1024, "%s/%s", file_path, entry->d_name);
+    if (is_file_ignored(base_path, path, ignored_files)) continue;
 
     struct stat statbuf;
     if (stat(path, &statbuf) == 0 && S_ISDIR(statbuf.st_mode)) {
-      read_dir_layout(path);
+      char **nested_files = read_dir_layout(base_path, path, ignored_files);
+      for (int i = 0; i < arrlen(nested_files); i++) {
+        arrpush(files, nested_files[i]);
+      }
     } else {
-      if (is_file_ignored(path, ignored_files) == 0)
-        arrpush(files, path);
+      arrpush(files, path_relative_from_base(base_path, path));
     }
   }
 

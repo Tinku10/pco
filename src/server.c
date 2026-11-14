@@ -91,20 +91,30 @@ void *accept_connections(void *ts) {
  * @return 0 if the operation is successful, -1 otherwise
  */
 int prepare_server_documents(node_t *node) {
-  char **lines = read_file(node->file.path);
+  char pcoignore_path[1024];
+  snprintf(pcoignore_path, sizeof(pcoignore_path), "%s/%s", node->file.path, ".pcoignore");
+  char** ignored_files = read_file(pcoignore_path);
+  char **dir_layout = read_dir_layout(node->file.path, node->file.path, ignored_files);
+  
+  if (dir_layout == NULL) return -1; 
 
-  AMresult *doc_result = NULL;
-  const AMobjId *obj_id =
-      add_list_to_document(node->doc, node->file.path, &doc_result);
-  if (!obj_id)
-    return -1;
+  // lazy load files 
+  for (int i = 0; i < arrlen(dir_layout); i++) {
+    AMresult *doc_result = NULL;
 
-  for (int32_t i = 0; i < arrlen(lines); i++) {
-    if (put_element_into_list(node->doc, obj_id, lines[i], i) < 0) {
+    const AMobjId *obj_id = add_list_to_document(node->doc, dir_layout[i], &doc_result);
+    
+    if (!obj_id) {
+      for (int j = 0; j < arrlen(dir_layout); j++) free(dir_layout[j]);
+      arrfree(dir_layout);
       return -1;
-    }
+    }   
+
+    AMresultFree(doc_result); 
   }
-  AMresultFree(doc_result);
+
+  for (int j = 0; j < arrlen(dir_layout); j++) free(dir_layout[j]);
+  arrfree(dir_layout);
   return 0;
 }
 
