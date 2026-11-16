@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <fnmatch.h>
 #include <uuid/uuid.h>
+#include <errno.h>
 
 #define MAX_PATH_LENGTH 1024
 
@@ -114,17 +115,25 @@ int create_path(const char* path) {
   while ((end = strchr(start, '/')) != NULL) {
     size_t len = end - start;
     memcpy(curr_path + curr_path_len, start, len);
-    curr_path[len] = '/';
-    curr_path_len += len + 1;
+    curr_path_len += len;
+    curr_path[curr_path_len++] = '/';
+    curr_path[curr_path_len] = '\0';
     start = end + 1;
 
-    mkdir(curr_path, 0755);
+    int ok;
+    if((ok = mkdir(curr_path, 0755)) != 0) {
+      if (ok != EEXIST) {
+        perror("failed to create directory");
+        return -1;
+      }
+    }
   }
 
   if ((end = strchr(start, '\0')) != NULL) {
     size_t len = end - start;
     memcpy(curr_path + curr_path_len, start, len);
-    curr_path_len += len + 1;
+    curr_path_len += len;
+    curr_path[curr_path_len] = '\0';
 
     FILE *file = fopen(curr_path, "w");
     if (file == NULL) {
@@ -132,7 +141,10 @@ int create_path(const char* path) {
       return -1;
     }
     start = end + 1;
+    fclose(file);
   }
+
+  return 0;
 }
 
 int create_dir_layout(char** files) {
