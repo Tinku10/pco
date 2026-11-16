@@ -6,6 +6,9 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <fnmatch.h>
+#include <uuid/uuid.h>
+
+#define MAX_PATH_LENGTH 1024
 
 char **read_file(char *path) {
   dbg_print("reading file %s\n", path);
@@ -98,4 +101,57 @@ char **read_dir_layout(char *base_path, char *file_path, char **ignored_files) {
   closedir(dir);
 
   return files;
+}
+
+
+int create_path(const char* path) {
+  char *start = path;
+  char *end;
+
+  char curr_path[MAX_PATH_LENGTH];
+  size_t curr_path_len = 0;
+
+  while ((end = strchr(start, '/')) != NULL) {
+    size_t len = end - start;
+    char *folder = (char *)malloc(sizeof(char) * len + 1);
+    memcpy(folder, start, len);
+    memcpy(curr_path + curr_path_len, start, len);
+    curr_path[len] = '/';
+    curr_path_len += len + 1;
+    start = end + 1;
+
+    mkdir(curr_path, 0755);
+  }
+
+  if ((end = strchr(start, '\0')) != NULL) {
+    size_t m_len = end - start;
+    char *m_content = (char *)malloc(sizeof(char) * m_len + 1);
+    memcpy(m_content, start, m_len);
+    m_content[m_len] = '\0';
+    fline_t m_line = {
+        .body = m_content, .len = m_len, .kind = kind, .range = range};
+    arrput(lines, m_line);
+    start = end + 1;
+  }
+
+  return lines;
+}
+
+int create_dir_layout(char** files) {
+  // TODO: handle OS level tmp paths
+  char* tmp_path = "/tmp";
+
+  // 1024 should be sufficient to store the base path of the session tmp directory
+  char session_path[MAX_PATH_LENGTH];
+
+  uuid_t uuid;
+  uuid_generate(&uuid);
+
+  snprintf(session_path, MAX_PATH_LENGTH, "%s/pco-%s", tmp_path, uuid);
+
+  if (mkdir(session_path, 0755) == 0) {
+    for (int i = 0; i < arrlen(files); i++) {
+       v
+    }
+  }
 }
