@@ -1,5 +1,6 @@
 #include "connection.h"
 #include "diff.h"
+#include "fileio.h"
 #include "log.h"
 #include "queue.h"
 #include <lauxlib.h>
@@ -102,10 +103,10 @@ static void push_document_state(lua_State *L, node_t *node) {
     char **list = NULL;
     get_list(node->doc, filename, &list);
 
-    if (!list) {
-      free(filename);
-      continue;
-    }
+    // if (!list) {
+    //   free(filename);
+    //   continue;
+    // }
 
     // Create Lua array
     lua_newtable(L);
@@ -262,6 +263,30 @@ int lua_server_start(lua_State *L) {
   return 1;
 }
 
+int lua_create_layout(lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  size_t cnt = lua_objlen(L, 1);
+
+  char **files = NULL;
+
+  for (size_t i = 1; i <= cnt; i++) {
+    lua_rawgeti(L, 1, i);
+
+    const char *file = luaL_checkstring(L, -1);
+
+    arrpush(files, (char *)file);
+  }
+
+  char *session_path = create_dir_layout(files);
+
+  lua_pop(L, cnt);
+  arrfree(files);
+
+  lua_pushstring(L, session_path);
+
+  return 1;
+}
+
 static const struct luaL_Reg lib[] = {
     // {"client_connect", lua_client_connect},
     {"client_listen", lua_client_listen},
@@ -270,6 +295,7 @@ static const struct luaL_Reg lib[] = {
     {"get_eventfd", lua_get_eventfd},
     {"send_message", lua_send_message},
     {"server_start", lua_server_start},
+    {"create_layout", lua_create_layout},
     // {"client_hello", lua_client_hello},
     {NULL, NULL},
 };
