@@ -203,11 +203,13 @@ int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
 }
 
 // structure of a message_t
-// | header:       4 bytes |
-// |=======================|
-// | kind:         4 bytes |
-// | doc_size:     4 bytes |
-// | crdt:  doc_size bytes |
+// | header:          4 bytes |
+// |==========================|
+// | kind:            4 bytes |
+// | doc_size:        4 bytes |
+// | crdt:     doc_size bytes |
+// | req_size:        4 bytes |
+// | req_file: req_size bytes |
 
 char *package_message(message_t *msg) {
   dbg_print("packing message\n");
@@ -219,7 +221,7 @@ char *package_message(message_t *msg) {
     fprintf(stderr, "error serialising automerge document");
     return NULL;
   }
-  const uint32_t total_bytes = 4 + 4 + bytes_serialised; // excluding header
+  const uint32_t total_bytes = 4 + 4 + bytes_serialised + 4 + msg->req_size; // excluding header
   char *buf = (char *)malloc(MSG_HEADER_BYTES + total_bytes);
 
   dbg_print("message size %d", total_bytes);
@@ -227,6 +229,7 @@ char *package_message(message_t *msg) {
   uint32_t total = htonl(total_bytes);
   uint32_t kind = htonl(msg->kind);
   uint32_t doc_size = htonl(bytes_serialised);
+  uint32_t req_size = htonl(msg->req_size);
 
   dbg_print("header %d", total_bytes);
 
@@ -234,6 +237,8 @@ char *package_message(message_t *msg) {
   memcpy(buf + MSG_HEADER_BYTES, &kind, 4);
   memcpy(buf + MSG_HEADER_BYTES + 4, &doc_size, 4);
   memcpy(buf + MSG_HEADER_BYTES + 4 + 4, buffer, bytes_serialised);
+  memcpy(buf + MSG_HEADER_BYTES + 4 + 4 + bytes_serialised, &req_size, 4);
+  memcpy(buf + MSG_HEADER_BYTES + 4 + 4 + bytes_serialised + 4, &msg->req_file, msg->req_size);
 
   dbg_print("packing complete\n");
 
@@ -258,6 +263,16 @@ message_t *unpackage_message(char *buf, AMdoc *doc) {
     fprintf(stderr, "error deserialising automerge document");
     return NULL;
   }
+
+  uint32_t req_size;
+  memcpy(&req_size, buf + 4 + 4 + doc_size, 4);
+  msg->req_size = ntohl(req_size);
+
+  char* req_file = (char*) malloc(msg->req_size + 1);
+  memcpy(&req_file, buf + 4 + 4 + doc_size + 4, msg->req_size);
+  req_file[msg->req_size] = '\0';
+
+  msg->req_file = req_file;
 
   return msg;
 }
@@ -389,30 +404,44 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
   switch (msg->kind) {
   case MSG_CONTENT:
   case SERVER_HELLO: {
+    message_t re_msg = {.kind = MSG_ACK, .doc = NULL};
+    send_message(conn_d, &re_msg);
+
     uint8_t byte = 1;
     qput(&node->inbox, msg);
     if (write(node->event[1], &byte, 1) < 0) {
       perror("failed to write wake up");
       return;
     }
-    message_t re_msg = {.kind = MSG_ACK, .doc = NULL};
-    send_message(conn_d, &re_msg);
     break;
   }
   case CLIENT_HELLO: {
+    message_t re_msg = {
+      .kind = SERVER_HELLO,
+      .doc = node->doc
+    };
+
+    send_message(conn_d, &re_msg);
+
     uint8_t byte = 1;
     qput(&node->inbox, msg);
     if (write(node->event[1], &byte, 1) < 0) {
       perror("failed to write wake up");
       return;
     }
-    
-    message_t re_msg = {
-        .kind = SERVER_HELLO,
-        .doc = node->doc
-    };
 
+    break;
+  }
+  case FILE_REQUEST: {
+    message_t re_msg = {.kind = FILE_RESPONSE, .doc = node->doc};
     send_message(conn_d, &re_msg);
+
+    uint8_t byte = 1;
+    qput(&node->inbox, msg);
+    if (write(node->event[1], &byte, 1) < 0) {
+      perror("failed to write wake up");
+      return;
+    }
 
     break;
   }

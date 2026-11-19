@@ -18,15 +18,24 @@
 #define MSG_HEADER_BYTES 4
 
 typedef enum {
+  // first message a newly connected client must send
   CLIENT_HELLO,
+  // acknowledgement message, generally ignored
   MSG_ACK,
   CLIENT_DISCONNECT,
+  // type for sending buffer content
   MSG_CONTENT,
+  // reply type for `CLIENT_HELLO` with the directory layout
   SERVER_HELLO,
   DOCUMENT_CREATE,
   DOCUMENT_DELETE,
   DOCUMENT_UPDATE,
-  UNKNOWN
+  // request content for a path
+  FILE_REQUEST,
+  // response content for a path
+  // similar to MSG_CONTENT but a separate type will allow custom action on client side
+  FILE_RESPONSE,
+  UNKNOWN,
 } message_kind;
 
 typedef enum {
@@ -77,8 +86,8 @@ typedef enum {
 
 typedef struct message {
   message_kind kind;
-  // char* body;
-  // size_t blen;
+  char* req_file;
+  size_t req_size;
   fdiff_t *diff;
   size_t dlen;
   AMdoc *doc; // incremental change made to doc
