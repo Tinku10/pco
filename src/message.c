@@ -423,12 +423,12 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
 
     send_message(conn_d, &re_msg);
 
-    uint8_t byte = 1;
-    qput(&node->inbox, msg);
-    if (write(node->event[1], &byte, 1) < 0) {
-      perror("failed to write wake up");
-      return;
-    }
+    // uint8_t byte = 1;
+    // qput(&node->inbox, msg);
+    // if (write(node->event[1], &byte, 1) < 0) {
+    //   perror("failed to write wake up");
+    //   return;
+    // }
 
     break;
   }
