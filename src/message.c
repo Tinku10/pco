@@ -21,6 +21,10 @@ const char *message_kind_str(message_kind kind) {
       return "DOCUMENT_DELETE";
     case DOCUMENT_UPDATE:
       return "DOCUMENT_UPDATE";
+    case FILE_REQUEST:
+      return "FILE_REQUEST";
+    case FILE_RESPONSE:
+      return "FILE_RESPONSE";
     default:
       return "UNKNOWN";
   }
@@ -45,6 +49,10 @@ message_kind message_kind_str_to_enum(const char *kind) {
         return DOCUMENT_DELETE;
     if (strcmp(kind, "DOCUMENT_UPDATE") == 0)
         return DOCUMENT_UPDATE;
+    if (strcmp(kind, "FILE_REQUEST") == 0)
+        return FILE_REQUEST;
+    if (strcmp(kind, "FILE_RESPONSE") == 0)
+        return FILE_RESPONSE;
 
     return UNKNOWN;
 }

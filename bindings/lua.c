@@ -287,6 +287,17 @@ int lua_create_layout(lua_State *L) {
   return 1;
 }
 
+int lua_request_file(lua_State* L) {
+  node_t* node = luaL_checkudata(L, 1, "Node");
+  const char* file_path = luaL_checkstring(L, 2);
+
+  message_t msg = {.kind = FILE_REQUEST, .req_file = file_path, .req_size = strlen(file_path)};
+
+  send_message(node->connected_sockets[0], &msg);
+
+  return 0;
+}
+
 static const struct luaL_Reg lib[] = {
     // {"client_connect", lua_client_connect},
     {"client_listen", lua_client_listen},
@@ -296,6 +307,7 @@ static const struct luaL_Reg lib[] = {
     {"send_message", lua_send_message},
     {"server_start", lua_server_start},
     {"create_layout", lua_create_layout},
+    {"request_file", lua_request_file},
     // {"client_hello", lua_client_hello},
     {NULL, NULL},
 };
