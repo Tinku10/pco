@@ -13,6 +13,7 @@
 #include "queue.h"
 #include <node_api.h>
 #include <stdlib.h>
+#include "fileio.h"
 #define MIN(x, y) (x > y ? y : x)
 
 static napi_value js_client_hello(napi_env, napi_callback_info);
@@ -22,6 +23,7 @@ static napi_value js_client_connect(napi_env, napi_callback_info);
 static napi_value js_get_message(napi_env, napi_callback_info);
 static napi_value js_send_message(napi_env, napi_callback_info);
 static napi_value js_server_start(napi_env, napi_callback_info);
+static napi_value js_create_dir_layout(napi_env, napi_callback_info);
 
 /**
  * @brief Utility method to attach a method to a javascript object
@@ -275,10 +277,10 @@ static napi_value js_get_document_state(napi_env env, napi_callback_info info) {
     char **list;
     get_list(node->doc, filename, &list);
 
-    if (!list) {
-      free(filename);
-      continue;
-    }
+    // if (!list) {
+    //   free(filename);
+    //   continue;
+    // }
 
     // Create JS array
     napi_value arr;
@@ -354,6 +356,7 @@ static napi_value js_client_connect(napi_env env, napi_callback_info info) {
   handle_func_create(env, result, "getPipeFd", js_get_pipe_fd);
   handle_func_create(env, result, "clientHello", js_client_hello);
   handle_func_create(env, result, "getDocumentState", js_get_document_state);
+  handle_func_create(env, result, "createDirLayout", js_create_dir_layout);
 
   return result;
 }
@@ -431,6 +434,58 @@ static napi_value js_get_pipe_fd(napi_env env, napi_callback_info info) {
   napi_value result;
   napi_create_int32(env, node->event[0], &result);
   return result;
+}
+
+static napi_value js_create_dir_layout(napi_env env, napi_callback_info info) {
+  napi_value this_ptr; // ref to the method invoker
+  size_t sz = 1;
+  napi_value args[1];
+  napi_status status = napi_get_cb_info(env, info, &sz, args, &this_ptr, NULL);
+  if (status != napi_ok) {
+    napi_throw_error(env, NULL, "failed to retrieve callback info");
+    return NULL;
+  }
+
+  node_t *node = NULL;
+  status = napi_unwrap(env, this_ptr, &node);
+  if (status != napi_ok) {
+    napi_throw_error(env, NULL, "failed to unwarp native object");
+    return NULL;
+  }
+
+  napi_value **files;
+  get_array_from_prop(env, args[0], "files", &files);
+  
+  char **c_list = NULL;
+  for (int i = 0; i < arrlen(files); i++) {
+    arrput(c_list, get_string_utf8(env, *files[i]));
+  }
+
+  char *base_path = create_dir_layout(c_list);
+
+  if (base_path == NULL) {
+    napi_throw_error(env, NULL, "failed to create directory layout");
+    for(int i = 0; i < arrlen(files); i++) {
+      free(files[i]);
+      free(c_list[i]);
+    }
+    arrfree(files);
+    arrfree(c_list);
+    return NULL;
+  }
+
+  napi_value js_result;  
+  napi_create_string_utf8(env, base_path, strlen(base_path), &js_result);
+
+  for(int i = 0; i < arrlen(files); i++) {
+    free(files[i]);
+    free(c_list[i]);
+  }
+  arrfree(files);
+  arrfree(c_list);
+  free(base_path);
+
+  return js_result;
 }
 
 static napi_value js_send_message(napi_env env, napi_callback_info info) {
