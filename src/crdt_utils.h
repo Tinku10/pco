@@ -112,14 +112,15 @@ int get_list_size(AMdoc *doc, const char *key);
 int overwrite_list(AMdoc *doc, const char *key, char **new_list);
 
 /**
- * @brief serialises the incremental changes made to a document
+ * @brief serialises changes made to a document
  *
  *
  * @param[in] doc pointer to the Automerge document to be serialised
  * @param[in] buffer pointer to the memory address of the serialised bytes
+ * @param[in] incremental 1 indicates incremental serialisation, 0 indicates full serialisation
  * @return number of bytes serialised or -1 in case of any error
  */
-int serialise_document(AMdoc *doc, char **buffer);
+int serialise_document(AMdoc *doc, char **buffer, int incremental);
 
 /**
  * @brief deserialises the incremental changes made to a document

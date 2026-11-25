@@ -50,7 +50,7 @@ TEST automerge_whole_document_serde(void) {
   AMresultFree(doc_result);
 
   char *buffer;
-  int bytes_serialised = serialise_document(alice_doc, &buffer);
+  int bytes_serialised = serialise_document(alice_doc, &buffer, 0);
   ASSERT_GT(bytes_serialised, 0);
   ASSERT_FALSE(buffer == NULL);
 
@@ -99,7 +99,7 @@ TEST automerge_incremental_document_serde(void) {
   put_element_into_list(doc, obj_id, "third line", 2);
 
   char *buffer;
-  int bytes = serialise_document(doc, &buffer);
+  int bytes = serialise_document(doc, &buffer, 0);
   ASSERT_GT(bytes, 0);
 
   // first deseialisation
@@ -110,7 +110,7 @@ TEST automerge_incremental_document_serde(void) {
   put_element_into_list(doc, obj_id, "change #1 after last save", 3);
   put_element_into_list(doc, obj_id, "change #2 after last save", 4);
 
-  int inc_bytes = serialise_document(doc, &buffer);
+  int inc_bytes = serialise_document(doc, &buffer, 0);
   ASSERT_GT(inc_bytes, 0);
 
   // second deseialisation

@@ -128,16 +128,7 @@ int client_listen(node_t*, char* ip, int port);
 
 // serialization
 char *package_message(message_t *);
-message_t *unpackage_message(char *, AMdoc *);
-
-int package_range_t(range_t *, char *);
-int unpackage_range_t(range_t *, char *);
-
-int package_fline_t(fline_t *, char *);
-int unpackage_fline_t(fline_t *, char *);
-
-int package_fdiff_t(fdiff_t *, char *);
-int unpackage_fdiff_t(fdiff_t *, char *);
+message_t *unpackage_message(char *, node_t *);
 
 // message print utility
 // void to_string_message_t(message_t *msg);

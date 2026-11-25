@@ -207,12 +207,12 @@ int overwrite_list(AMdoc *doc, const char *key, char **new_list) {
   return 0;
 }
 
-int serialise_document(AMdoc *doc, char **buffer) {
+int serialise_document(AMdoc *doc, char **buffer, int incremental) {
   if (!doc) {
     return 0;
   }
 
-  AMresult *result = AMsaveIncremental(doc);
+  AMresult *result = (incremental ? AMsaveIncremental(doc) : AMsave(doc));
   AMbyteSpan bytes;
 
   if (!result || !AMitemToBytes(AMresultItem(result), &bytes)) {

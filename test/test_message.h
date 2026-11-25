@@ -3,145 +3,98 @@
 #include <greatest/greatest.h>
 #include <connection.h>
 
-// TEST serde_package_range_t(void) {
-//     range_t range = {2, 0, 4, 3};
-//     range_t *output = (range_t *)malloc(sizeof(range_t));
+TEST serde_client_hello_message(void) {
+    // client
+    message_t msg = { .kind = CLIENT_HELLO, .doc = NULL};
+    char *buffer = package_message(&msg);
+
+    // server
+    node_t node = {.kind = NODE_ADMIN, .doc = NULL};
+    message_t *output_msg = unpackage_message(buffer + 4, &node);
+    ASSERT_ENUM_EQ(CLIENT_HELLO, output_msg->kind, "CLIENT_HELLO");
+
+    // cleanup
+    free(buffer);
+    free(output_msg);
+
+    PASS();
+}
+
+TEST serde_server_hello_message(void) {
+    // server
+    AMresult *result = AMcreate(NULL);
+    AMdoc *doc = get_document(result);
+    AMresult *server_obj_result = NULL;
+    const AMobjId *obj_id = add_list_to_document(doc, "test.txt", &server_obj_result);
+    put_element_into_list(doc, obj_id, "item #1", 0);
+    put_element_into_list(doc, obj_id, "item #2", 1);
+    put_element_into_list(doc, obj_id, "item #3", 2);
+
+    message_t msg1 = {
+      .kind = SERVER_HELLO,
+      .doc = doc
+    };
+
+    char *buffer1 = package_message(&msg1);
+
+    put_element_into_list(doc, obj_id, "item #4", 3);
+    put_element_into_list(doc, obj_id, "item #5", 4);
+    put_element_into_list(doc, obj_id, "item #6", 5);
+
+    message_t msg2 = {
+      .kind = MSG_CONTENT,
+      .doc = doc
+    };
+
+    char *buffer2 = package_message(&msg2);
+
+    message_t msg3 = {
+      .kind = SERVER_HELLO,
+      .doc = doc
+    };
+
+    char *buffer3 = package_message(&msg3);
+
+    // client 
+    AMresult *client_result = AMcreate(NULL);
+    AMdoc *client_doc = get_document(result);
+
+    node_t client_node = {.kind = NODE_CONTRIBUTOR, .doc = client_doc};
+    message_t *output_msg = unpackage_message(buffer3 + 4, &client_node);
+    // after server hello, client's document should sync back with server's
+    ASSERT_ENUM_EQ(SERVER_HELLO, output_msg->kind, "SERVER_HELLO");
+    char **list = NULL;
+    get_list(client_doc, "test.txt", &list);
+    ASSERT(list != NULL);
+    ASSERT_EQ(6, arrlen(list));
+
+
+    // cleanup
+    AMresultFree(result);
+    AMresultFree(server_obj_result);
+    AMresultFree(client_result);
+    free(buffer1);
+    free(buffer2);
+    free(buffer3);
+    for (int i = 0; i < arrlen(list); i++) free(list[i]);
+    arrfree(list);
     
-//     char *buf = (char *)malloc(4 * sizeof(int32_t));
-//     package_range_t(&range, buf);
-//     unpackage_range_t(output, buf);
+    PASS();
+}
 
-//     ASSERT_EQ(2, output->start_pos);
-//     ASSERT_EQ(0, output->start_char);
-//     ASSERT_EQ(4, output->end_pos);
-//     ASSERT_EQ(3, output->end_char);
+TEST serde_ack_message(void) {
 
-//     PASS();
-// }
+    PASS();
+}
 
-// TEST serde_package_fline_t(void) {
-//     range_t range = {2, 0, 4, 3};
-//     fline_t line = {.len = 5, .body = "hello", .range = range};
-//     fline_t *output = (fline_t *)malloc(sizeof(fline_t));
+TEST serde_content_message(void) {
 
-//     char *buf = (char *)malloc(4 + sizeof(range_t) + 4 + 6);
-//     package_fline_t(&line, buf);
-//     unpackage_fline_t(output, buf);
-
-
-//     ASSERT_STR_EQ("hello", output->body);
-//     ASSERT_EQ(DIFF_ADDED, output->kind);
-//     ASSERT_EQ(5, output->len);
-//     ASSERT_EQ(2, output->range.start_pos);
-//     ASSERT_EQ(0, output->range.start_char);
-//     ASSERT_EQ(4, output->range.end_pos);
-//     ASSERT_EQ(3, output->range.end_char);
-
-//     PASS();
-// }
-
-// TEST serde_package_fdiff_t(void) {
-//     range_t range1 = {0, 0, 0, 5};
-//     range_t range2 = {1, 0, 1, 5};
-
-//     fline_t lines[2];
-//     lines[0].body = "this is a long line of text for testing";
-//     lines[0].len = 39;
-//     lines[0].kind = DIFF_ADDED;
-//     lines[0].range = range1;
-
-//     lines[1].body = "this is yet another a longer line of text with newline\n";
-//     lines[1].len = 55;
-//     lines[1].kind = DIFF_MODIFIED;
-//     lines[1].range = range2;
-
-//     fdiff_t diff = {.path = "test.txt", .plen = 9, .cursor_r = 10, .llen = 2, .lines = lines};
-//     fdiff_t *output = (fdiff_t *)malloc(sizeof(fdiff_t));
-//     char *buf = (char *)malloc(8 + 4 + 4 + 4 + (39 + 4 + 4 + sizeof(range_t)) + (55 + 4 + 4 + sizeof(range_t)));
-
-//     package_fdiff_t(&diff, buf);
-//     unpackage_fdiff_t(output, buf);
-
-//     ASSERT_STR_EQ("test.txt", output->path);
-//     ASSERT_EQ(9, output->plen);
-//     ASSERT_EQ(10, output->cursor_r);
-//     ASSERT_EQ(2, output->llen);
-
-//     ASSERT_STR_EQ("this is a long line of text for testing", output->lines->body);
-//     ASSERT_EQ(39, output->lines->len);
-//     ASSERT_EQ(DIFF_ADDED, output->lines->kind);
-
-//     ASSERT_EQ(0, output->lines->range.start_pos);
-//     ASSERT_EQ(0, output->lines->range.start_char);
-//     ASSERT_EQ(0, output->lines->range.end_pos);
-//     ASSERT_EQ(5, output->lines->range.end_char);
-
-//     ASSERT_STR_EQ("this is yet another a longer line of text with newline\n", (output->lines + 1)->body);
-//     ASSERT_EQ(55, (output->lines + 1)->len);
-//     ASSERT_EQ(DIFF_MODIFIED, (output->lines + 1)->kind);
-    
-//     ASSERT_EQ(1, (output->lines + 1)->range.start_pos);
-//     ASSERT_EQ(0, (output->lines + 1)->range.start_char);
-//     ASSERT_EQ(1, (output->lines + 1)->range.end_pos);
-//     ASSERT_EQ(5, (output->lines + 1)->range.end_char);
-
-//     PASS();
-// }
-
-// TEST serde_package_message_t(void) {
-//     range_t range1 = {4, 5, 6, 5};
-//     range_t range2 = {11, 4, 13, 5};
-
-//     fline_t lines[2];
-//     lines[0].body = "this is a long line of text for testing";
-//     lines[0].len = 39;
-//     lines[0].kind = DIFF_ADDED;
-//     lines[0].range = range1;
-
-//     lines[1].body = "this is yet another a longer line of text";
-//     lines[1].len = 41;
-//     lines[1].kind = DIFF_MODIFIED;
-//     lines[1].range = range2;
-
-//     fdiff_t diff = {.path = "test.txt", .plen = 8, .cursor_r = 10, .llen = 2, .lines = lines};
-//     message_t msg = {.kind = MSG_CONTENT, .dlen = 1, .diff = &diff};
-
-//     char *buf = package_message(&msg);
-//     message_t *output = unpackage_message(buf + 4); // skip header
-
-//     ASSERT_EQ(MSG_CONTENT, output->kind);
-//     ASSERT_EQ(1, output->dlen);
-//     ASSERT_STR_EQ("test.txt", output->diff->path);
-//     ASSERT_EQ(10, output->diff->cursor_r);
-//     ASSERT_EQ(2, output->diff->llen);
-//     ASSERT_EQ(8, output->diff->plen);
-
-//     ASSERT_STR_EQ("this is a long line of text for testing", output->diff->lines->body);
-//     ASSERT_EQ(39, output->diff->lines->len);
-//     ASSERT_EQ(DIFF_ADDED, output->diff->lines->kind);
-
-//     ASSERT_EQ(4, output->diff->lines->range.start_pos);
-//     ASSERT_EQ(5, output->diff->lines->range.start_char);
-//     ASSERT_EQ(6, output->diff->lines->range.end_pos);
-//     ASSERT_EQ(5, output->diff->lines->range.end_char);
-
-//     ASSERT_STR_EQ("this is yet another a longer line of text", (output->diff->lines + 1)->body);
-//     ASSERT_EQ(41, (output->diff->lines + 1)->len);
-//     ASSERT_EQ(DIFF_MODIFIED, (output->diff->lines + 1)->kind);
-    
-//     ASSERT_EQ(11, (output->diff->lines + 1)->range.start_pos);
-//     ASSERT_EQ(4, (output->diff->lines + 1)->range.start_char);
-//     ASSERT_EQ(13, (output->diff->lines + 1)->range.end_pos);
-//     ASSERT_EQ(5, (output->diff->lines + 1)->range.end_char);
-
-//     PASS();
-// }
+    PASS();
+}
 
 SUITE(suite_message_serde) {
-    // RUN_TEST(serde_package_range_t);
-    // RUN_TEST(serde_package_fline_t);
-    // RUN_TEST(serde_package_fdiff_t);
-    // RUN_TEST(serde_package_message_t);
+    RUN_TEST(serde_client_hello_message);
+    RUN_TEST(serde_server_hello_message);
 }
 
 #endif

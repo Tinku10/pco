@@ -8,7 +8,7 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
 
     // run suite
-    // RUN_SUITE(suite_message_serde);
+    RUN_SUITE(suite_message_serde);
     RUN_SUITE(suite_automerge);
 
     // results

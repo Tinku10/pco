@@ -4,6 +4,7 @@
 #include "queue.h"
 #include "string.h"
 #include <stb/stb_ds.h>
+#include "fileio.h"
 
 const char *message_kind_str(message_kind kind) {
   switch (kind) {
@@ -85,131 +86,6 @@ diff_kind diff_kind_str_to_enum(const char *kind) {
     return UNKNOWN;
 }
 
-// serde for range_t
-int package_range_t(range_t *range, char *buf) {
-  uint32_t start_pos = htonl(range->start_pos);
-  uint32_t start_char = htonl(range->start_char);
-  uint32_t end_pos = htonl(range->end_pos);
-  uint32_t end_char = htonl(range->end_char);
-
-  uint32_t offset = 0;
-  memcpy(buf + offset, &start_pos, 4);
-  offset += 4;
-  memcpy(buf + offset, &start_char, 4);
-  offset += 4;
-  memcpy(buf + offset, &end_pos, 4);
-  offset += 4;
-  memcpy(buf + offset, &end_char, 4);
-  offset += 4;
-  return offset;
-}
-
-int unpackage_range_t(range_t *range, char *buf) {
-  uint32_t offset = 0;
-  memcpy(&range->start_pos, buf + offset, 4);
-  offset += 4;
-  memcpy(&range->start_char, buf + offset, 4);
-  offset += 4;
-  memcpy(&range->end_pos, buf + offset, 4);
-  offset += 4;
-  memcpy(&range->end_char, buf + offset, 4);
-  offset += 4;
-
-  range->start_pos = ntohl(range->start_pos);
-  range->start_char = ntohl(range->start_char);
-  range->end_pos = ntohl(range->end_pos);
-  range->end_char = ntohl(range->end_char);
-  return offset;
-}
-
-// serde for fline_t
-int package_fline_t(fline_t *line, char *buf) {
-  uint32_t offset = 0;
-  uint32_t kind = htonl(line->kind);
-  uint32_t len = htonl(line->len);
-
-  memcpy(buf + offset, &kind, 4);
-  offset += 4;
-  offset += package_range_t(&line->range, buf + offset);
-  
-  memcpy(buf + offset, &len, 4);
-  offset += 4;
-  memcpy(buf + offset, line->body, line->len);
-  offset += line->len;
-
-  return offset;
-}
-
-int unpackage_fline_t(fline_t *line, char *buf) {
-  uint32_t offset = 0;
-  memcpy(&line->kind, buf + offset, 4);
-  line->kind = ntohl(line->kind);
-  offset += 4;
-  
-  offset += unpackage_range_t(&line->range, buf + offset);
-  
-  memcpy(&line->len, buf + offset, 4);
-  line->len = ntohl(line->len);
-  offset += 4;
-  
-  line->body = (char *)malloc(line->len + 1);
-  memcpy(line->body, buf + offset, line->len);
-  line->body[line->len] = '\0';
-  offset += line->len;
-
-  return offset;
-}
-
-// serde for diff_t
-int package_fdiff_t(fdiff_t *diff, char *buf) {
-  uint32_t offset = 0;
-  int32_t plen = htonl(diff->plen);
-  int32_t cursor = htonl(diff->cursor_r);
-  int32_t llen = htonl(diff->llen);
-
-  memcpy(buf + offset, &plen, 4);
-  offset += 4;
-  memcpy(buf + offset, diff->path, diff->plen);
-  offset += diff->plen;
-  memcpy(buf + offset, &cursor, 4);
-  offset += 4;
-  memcpy(buf + offset, &llen, 4);
-  offset += 4;
-  for (int i = 0; i < diff->llen; i++) {
-    offset += package_fline_t(diff->lines + i, buf + offset);
-  }
-
-  return offset;
-}
-
-int unpackage_fdiff_t(fdiff_t *diff, char *buf) {
-  uint32_t offset = 0;
-
-  memcpy(&diff->plen, buf + offset, 4);
-  diff->plen = ntohl(diff->plen);
-  offset += 4;
-
-  diff->path = (char *)malloc(diff->plen + 1);
-  memcpy(diff->path, buf + offset, diff->plen);
-  diff->path[diff->plen] = '\0';
-  offset += diff->plen;
-
-  memcpy(&diff->cursor_r, buf + offset, 4);
-  diff->cursor_r = ntohl(diff->cursor_r);
-  offset += 4;
-
-  memcpy(&diff->llen, buf + offset, 4);
-  diff->llen = ntohl(diff->llen);
-  offset += 4;
-
-  diff->lines = (fline_t *)malloc(sizeof(fline_t) * diff->llen);
-  for (int i = 0; i < diff->llen; i++) {
-    offset += unpackage_fline_t(diff->lines + i, buf + offset);
-  }
-
-  return offset;
-}
-
 // structure of a message_t
 // | header:          4 bytes |
 // |==========================|
@@ -223,7 +99,8 @@ char *package_message(message_t *msg) {
   dbg_print("packing message\n");
 
   char *buffer;
-  int bytes_serialised = serialise_document(msg->doc, &buffer);
+  // do full serialisation when message type is SERVER_HELLO
+  int bytes_serialised = serialise_document(msg->doc, &buffer, (msg->kind == SERVER_HELLO ? 0 : 1));
   if (bytes_serialised < 0) {
     free(buffer);
     fprintf(stderr, "error serialising automerge document");
@@ -241,47 +118,61 @@ char *package_message(message_t *msg) {
 
   dbg_print("header %d", total_bytes);
 
-  memcpy(buf, &total, MSG_HEADER_BYTES);
-  memcpy(buf + MSG_HEADER_BYTES, &kind, 4);
-  memcpy(buf + MSG_HEADER_BYTES + 4, &doc_size, 4);
-  memcpy(buf + MSG_HEADER_BYTES + 4 + 4, buffer, bytes_serialised);
-  memcpy(buf + MSG_HEADER_BYTES + 4 + 4 + bytes_serialised, &req_size, 4);
-  memcpy(buf + MSG_HEADER_BYTES + 4 + 4 + bytes_serialised + 4, &msg->req_file, msg->req_size);
-
+  uint32_t shift = 0;
+  memcpy(buf + shift, &total, MSG_HEADER_BYTES);
+  shift += MSG_HEADER_BYTES;
+  memcpy(buf + shift, &kind, 4);
+  shift += 4;
+  memcpy(buf + shift, &doc_size, 4);
+  shift += 4;
+  memcpy(buf + shift, buffer, bytes_serialised);
+  shift += bytes_serialised;
+  memcpy(buf + shift, &req_size, 4);
+  shift += 4;
+  memcpy(buf + shift, msg->req_file, msg->req_size);
+  shift += msg->req_size;
+  
   dbg_print("packing complete\n");
 
   return buf;
 }
 
 // call this method skipping the first 4 bytes of the Header
-message_t *unpackage_message(char *buf, AMdoc *doc) {
+message_t *unpackage_message(char *buf, node_t *node) {
   dbg_print("unpacking message\n");
 
   message_t *msg = (message_t *)malloc(sizeof(message_t));
 
+  uint32_t shift = 0;
   uint32_t kind;
-  memcpy(&kind, buf, 4);
+  memcpy(&kind, buf + shift, 4);
+  shift += 4;
   msg->kind = ntohl(kind);
 
   uint32_t doc_size;
-  memcpy(&doc_size, buf + 4, 4);
+  memcpy(&doc_size, buf + shift, 4);
+  shift += 4;
   doc_size = ntohl(doc_size);
 
-  if (deserialise_document(doc, buf + 4 + 4, doc_size) < 0) {
+  if (deserialise_document(node->doc, buf + shift, doc_size) < 0) {
     fprintf(stderr, "error deserialising automerge document");
     return NULL;
   }
+  shift += doc_size;
 
   uint32_t req_size;
-  memcpy(&req_size, buf + 4 + 4 + doc_size, 4);
+  memcpy(&req_size, buf + shift, 4);
   msg->req_size = ntohl(req_size);
+  shift += 4;
 
-  char* req_file = (char*) malloc(msg->req_size + 1);
-  memcpy(&req_file, buf + 4 + 4 + doc_size + 4, msg->req_size);
-  req_file[msg->req_size] = '\0';
-
-  msg->req_file = req_file;
-
+  if (msg->req_size > 0) {
+    char* req_file = (char*) malloc(msg->req_size + 1);
+    memcpy(req_file, buf + shift, msg->req_size);
+    shift += msg->req_size;
+    req_file[msg->req_size] = '\0';
+    msg->req_file = req_file;
+  }
+  
   return msg;
 }
 
@@ -358,7 +249,7 @@ void receive_messages(int conn_d, const node_t *node) {
     if (buf == NULL)
       break;
     
-    message_t *msg = unpackage_message(buf, node->doc);
+    message_t *msg = unpackage_message(buf, node);
     on_message_received(conn_d, msg, node);
   }
 
@@ -441,9 +332,27 @@ void on_message_received(int conn_d, message_t *msg, const node_t *node) {
     break;
   }
   case FILE_REQUEST: {
-    message_t re_msg = {.kind = FILE_RESPONSE, .doc = node->doc};
-    send_message(conn_d, &re_msg);
+    char **content = read_file(msg->req_file);
+    if (overwrite_list(node->doc, msg->req_file, content) < 0) {
+      fprintf(stderr, "error updating contents of crdt document %s", msg->req_file);
+      goto cleanup;
+    }
 
+    message_t re_msg = {.kind = FILE_RESPONSE, .doc = node->doc};
+    
+    if (send_message(conn_d, &re_msg) < 0) {
+      fprintf(stderr, "error sending message kind FILE_RESPONSE");
+      goto cleanup;
+    }
+
+    cleanup:
+      free(msg->req_file);
+      for (int i = 0; i < arrlen(content); i++) free(content[i]);
+      arrfree(content);
+
+    break;
+  }
+  case FILE_RESPONSE: {
     uint8_t byte = 1;
     qput(&node->inbox, msg);
     if (write(node->event[1], &byte, 1) < 0) {
